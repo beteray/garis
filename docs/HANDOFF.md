@@ -3,7 +3,7 @@
 Plik dla każdego, kto siada do tego projektu — człowieka albo modelu.
 **Aktualizowany na koniec każdego etapu.**
 
-Ostatnia aktualizacja: koniec etapu 1.
+Ostatnia aktualizacja: etap 2 w toku (API + interfejs gotowe, powłoka natywna napisana).
 
 ## Kto prowadzi
 
@@ -14,7 +14,8 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (148 testów). Bez GUI, bez audio.
+Silnik jest kompletny i przetestowany (173 testy). Lokalne API działa. Interfejs
+jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
 core/src/garis/
@@ -25,16 +26,24 @@ core/src/garis/
   tools/                                         53 narzędzia
   agent/                                         plan → wykonaj → sprawdź → napraw
   tasks/                                         trwałość, współbieżność
+  api/                                           HTTP + WebSocket dla wszystkich powierzchni
   app.py cli.py                                  złożenie + CLI
+
+apps/desktop/                                    interfejs (etap 2)
+  src/                                           React + TS + framer-motion + WebGL
+  src-tauri/                                     powłoka: tray, Mica, autostart
 ```
 
 Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 148 passed
+.venv/bin/python -m pytest -q                 # 173 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
+
+.venv/bin/garis serve --print-token           # silnik + API
+cd apps/desktop && npm install && npm run dev # interfejs
 ```
 
 Działa bez żadnego klucza API: atrapa dostawcy ma odruchowy planer, który radzi
@@ -43,12 +52,17 @@ udawać sukces.
 
 ## Czego nie ma
 
-- GUI (etap 2), audio i słowo aktywacyjne (etap 3), mobile (etap 7)
+- **Powłoka Tauri nie została skompilowana.** Kod Rusta (tray, Mica, autostart,
+  cykl życia silnika) jest napisany, ale ta sesja nie miała ani Windows, ani
+  webkit2gtk. `npm run tauri build` to pierwsza rzecz do zrobienia na Windows —
+  spodziewaj się drobnych poprawek w API Tauri 2, nie w architekturze.
+- Ikony aplikacji (`src-tauri/icons/`) są puste — trzeba wygenerować.
+- audio i słowo aktywacyjne (etap 3), mobile (etap 7)
 - ścieżki natywne Windows **nie były uruchomione na Windows** — powstały na
   Linuksie, z deklaracją platformy i `Unsupported` poza Windows. To pierwsza
   rzecz do zrobienia w etapie 4, razem z CI na `windows-latest`
 - MCP, pluginy, poczta/kalendarz (etap 8)
-- brak serwera API — kontrakt UI↔rdzeń trzeba zdefiniować na początku etapu 2
+
 
 ## Zasady, których nie wolno złamać
 
@@ -89,18 +103,29 @@ Zapisane, żeby nie wpaść drugi raz:
   import X` daje drugą kopię modułu i cicho gubi stan. Współdzielony stan → fixture.
 - **Podglądy i tematy pamięci też zdradzają treść.** Dlatego wszystko idzie do
   jednej koperty, a jawne zostają wyłącznie metadane.
+- **Synchroniczny klient HTTP wołany z pętli zdarzeń zakleszcza serwer w tym
+  samym procesie.** Skrypt demonstracyjny wisiał, dopóki nie poszedł na gniazda
+  asynchroniczne. Serwer był w porządku.
+- **RFC 6455: ramki klienta są maskowane, ramki serwera nie.** Jeden czytnik nie
+  obsłuży obu kierunków bez parametru (`read_frame(expect_mask=...)`).
 
-## Następny krok (etap 2)
+## Etap 2 — co zrobione, co zostało
 
-Kolejność, którą uważam za właściwą:
+Zrobione:
 
-1. **Lokalne API** (`core/src/garis/api/`) — HTTP + WebSocket na stdlib, token,
-   bind na loopback. To kontrakt dla GUI i mobile; bez niego UI zacznie sięgać do
-   wnętrza rdzenia i architektura się rozjedzie.
-2. `docs/API.md` razem z implementacją.
-3. Powłoka Tauri 2 + tray + autostart, okno zamykane bez zatrzymywania pracy.
-4. Kula ze stanami (sterowana zdarzeniami `agent.state`), potem panele.
-5. Onboarding jako rozmowa.
+1. ✅ Lokalne API (`core/src/garis/api/`) + `docs/API.md` — 27 testów.
+2. ✅ Interfejs: kula WebGL ze stanami, panele (rozmowa, zadania, pamięć + sejf,
+   urządzenia, subskrypcje, ustawienia, diagnostyka), karty zgód, onboarding
+   jako rozmowa. `npm run build` przechodzi, TypeScript strict.
+3. ✅ Powłoka Tauri napisana: tray, hide-on-close, Mica, autostart, skrót
+   globalny, uruchamianie i dołączanie do silnika.
+
+Zostało:
+
+4. ⏳ **Zbudować powłokę na Windows 11** i poprawić to, co się posypie.
+5. ⏳ Ikony aplikacji i tray-a.
+6. ⏳ Instalator (MSI/NSIS) + podpis.
+7. ⏳ Test „zamknięcie okna nie zatrzymuje zadania" na realnym Windows.
 
 Wymagania wizualne są nienegocjowalne i opisane w `docs/UI.md`: Liquid Glass,
 framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.

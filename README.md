@@ -16,8 +16,10 @@ garis do "przygotuj mi notatkę z tego projektu"
 
 ## Stan projektu
 
-**Etap 1 ukończony: silnik działa i jest przetestowany (148 testów).**
-GUI, głos i mobile są w kolejnych etapach — `docs/ROADMAP.md`.
+**Etap 1 ukończony:** silnik działa i jest przetestowany (173 testy).
+**Etap 2 w toku:** lokalne API i interfejs gotowe i kompilujące się; powłoka
+natywna (tray, Mica, autostart) napisana, czeka na kompilację na Windows.
+Głos, serwer i mobile — `docs/ROADMAP.md`.
 
 ## Co już potrafi
 
@@ -40,6 +42,10 @@ GUI, głos i mobile są w kolejnych etapach — `docs/ROADMAP.md`.
 - **Zabezpieczenia pod spodem** — nie pyta o zgodę na zwykłą pracę. Pyta przed
   płatnością, publikacją, wysłaniem wiadomości w Twoim imieniu, zmianą danych
   logowania i trwałym usunięciem danych. Uprzedza przed dużym pobraniem i kosztem.
+- **Interfejs** — animowana kula pokazująca stan (słucham, myślę, pracuję, mówię,
+  czekam, błąd), rozmowa, zadania na żywo, pamięć i sejf, urządzenia, ustawienia,
+  diagnostyka. Liquid Glass, wszystko animowane. Zamknięcie okna nie zatrzymuje
+  pracy — GARIS zostaje w zasobniku.
 
 ## Start
 
@@ -60,6 +66,15 @@ udawać, że coś zrobił. Żeby odblokować pełne możliwości:
 ```
 
 Klucz trafia do zaszyfrowanego sejfu, nie do pliku konfiguracyjnego.
+
+### Interfejs
+
+```bash
+.venv/bin/garis serve --print-token       # silnik + lokalne API
+cd apps/desktop && npm install && npm run dev
+```
+
+Szczegóły i stan powłoki natywnej: `apps/desktop/README.md`.
 
 ## Polecenia
 
@@ -98,14 +113,17 @@ sprawdzone i zapisane. Szczegóły: `docs/ARCHITECTURE.md`, zasady bezpieczeńst
 | `docs/ROADMAP.md` | Etapy 1–8 z kryteriami ukończenia |
 | `docs/HANDOFF.md` | Stan projektu, zasady, pułapki, następny krok |
 | `docs/TOOLS.md` | Jak dodać własną zdolność |
-| `docs/UI.md` | Kontrakt wizualny etapu 2: Liquid Glass, animacje |
+| `docs/API.md` | Protokół HTTP + WebSocket dla interfejsu, mobile i serwera |
+| `docs/UI.md` | Kontrakt wizualny: Liquid Glass, animacje, stany kuli |
 
 ## Rozwój
 
 ```bash
-.venv/bin/python -m pytest -q      # 148 testów
+.venv/bin/python -m pytest -q      # 173 testy
 .venv/bin/ruff check .
 .venv/bin/mypy
+
+cd apps/desktop && npm run build   # TypeScript strict + Vite
 ```
 
 Testy opisują gwarancje produktu, nie implementację: że zwykła praca nie pyta

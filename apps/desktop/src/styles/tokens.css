@@ -1,0 +1,123 @@
+/*
+ * The whole visual language in one file.
+ *
+ * Liquid Glass is not "a translucent background". It is four things at once, and
+ * skipping any one of them is what makes glass look like a cheap overlay:
+ *   1. blur of what is actually behind it
+ *   2. a light edge where the pane catches light
+ *   3. depth from shadow, never from a border
+ *   4. reaction to the pointer, because glass is a surface, not a picture
+ */
+
+:root {
+  /* --- glass ---------------------------------------------------------- */
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-strong: rgba(255, 255, 255, 0.10);
+  --glass-bg-hover: rgba(255, 255, 255, 0.14);
+  --glass-stroke: rgba(255, 255, 255, 0.12);
+  --glass-stroke-strong: rgba(255, 255, 255, 0.22);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --glass-blur: 40px;
+  --glass-saturate: 180%;
+
+  /* --- shape ---------------------------------------------------------- */
+  --radius-panel: 24px;
+  --radius-card: 18px;
+  --radius-control: 13px;
+  --radius-pill: 999px;
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.18);
+  --shadow-lifted: 0 14px 44px rgba(0, 0, 0, 0.34);
+
+  /* --- ink ------------------------------------------------------------ */
+  --ink: rgba(255, 255, 255, 0.94);
+  --ink-soft: rgba(255, 255, 255, 0.66);
+  --ink-faint: rgba(255, 255, 255, 0.40);
+
+  /* --- state colours, shared with the orb ----------------------------- */
+  --state-idle: 190 90% 62%;        /* calm blue */
+  --state-listening: 165 85% 58%;   /* awake teal */
+  --state-thinking: 268 85% 68%;    /* violet */
+  --state-working: 196 95% 60%;     /* cyan */
+  --state-speaking: 210 95% 66%;
+  --state-error: 8 88% 62%;         /* warm, never alarming red */
+  --state-ok: 148 70% 52%;
+
+  --accent: hsl(var(--state-working));
+  --accent-soft: hsl(var(--state-working) / 0.16);
+
+  /* --- motion ---------------------------------------------------------
+   * One easing curve for almost everything. It is the iOS deceleration feel:
+   * quick to commit, long to settle. Mixing curves is what makes an interface
+   * feel assembled from parts.
+   */
+  --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-instant: 120ms;
+  --dur-fast: 180ms;
+  --dur-base: 280ms;
+  --dur-slow: 520ms;
+  --dur-ambient: 4200ms;
+
+  /* --- layout --------------------------------------------------------- */
+  --nav-width: 232px;
+  --gap: 16px;
+  --pad-panel: 22px;
+
+  color-scheme: dark light;
+}
+
+/* Light theme is first-class, not an afterthought: glass over a bright desktop
+ * needs darker ink and a *lower* white alpha, or it turns into milk. */
+:root[data-theme="light"] {
+  --glass-bg: rgba(255, 255, 255, 0.52);
+  --glass-bg-strong: rgba(255, 255, 255, 0.68);
+  --glass-bg-hover: rgba(255, 255, 255, 0.78);
+  --glass-stroke: rgba(0, 0, 0, 0.08);
+  --glass-stroke-strong: rgba(0, 0, 0, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.08);
+  --shadow-lifted: 0 14px 44px rgba(0, 0, 0, 0.16);
+  --ink: rgba(12, 16, 22, 0.92);
+  --ink-soft: rgba(12, 16, 22, 0.60);
+  --ink-faint: rgba(12, 16, 22, 0.38);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --glass-bg: rgba(255, 255, 255, 0.52);
+    --glass-bg-strong: rgba(255, 255, 255, 0.68);
+    --glass-bg-hover: rgba(255, 255, 255, 0.78);
+    --glass-stroke: rgba(0, 0, 0, 0.08);
+    --glass-stroke-strong: rgba(0, 0, 0, 0.14);
+    --glass-highlight: rgba(255, 255, 255, 0.9);
+    --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.12);
+    --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.08);
+    --shadow-lifted: 0 14px 44px rgba(0, 0, 0, 0.16);
+    --ink: rgba(12, 16, 22, 0.92);
+    --ink-soft: rgba(12, 16, 22, 0.60);
+    --ink-faint: rgba(12, 16, 22, 0.38);
+  }
+}
+
+/* Accessibility beats effect, always. Motion collapses to opacity; the layout
+ * and every affordance stay exactly where they were. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 1ms;
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+    --dur-ambient: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

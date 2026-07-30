@@ -1,0 +1,287 @@
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* The window itself is transparent so Windows Mica/Acrylic shows through and
+   * the blur has real desktop to blur. The gradient is only a fallback for
+   * platforms without native vibrancy. */
+  background: transparent;
+  color: var(--ink);
+  font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+#root:not([data-vibrancy="true"]) {
+  background:
+    radial-gradient(120% 90% at 12% 0%, hsl(230 40% 22% / 0.92), transparent 60%),
+    radial-gradient(100% 80% at 100% 100%, hsl(268 44% 24% / 0.88), transparent 62%),
+    linear-gradient(160deg, hsl(226 32% 10%), hsl(232 34% 7%));
+}
+
+:root[data-theme="light"] #root:not([data-vibrancy="true"]) {
+  background:
+    radial-gradient(120% 90% at 12% 0%, hsl(210 100% 92% / 0.9), transparent 60%),
+    radial-gradient(100% 80% at 100% 100%, hsl(268 80% 92% / 0.9), transparent 62%),
+    linear-gradient(160deg, hsl(210 40% 97%), hsl(228 30% 92%));
+}
+
+/* --- glass ------------------------------------------------------------- */
+
+.glass {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  transition:
+    background var(--dur-base) var(--ease-glass),
+    border-color var(--dur-base) var(--ease-glass),
+    box-shadow var(--dur-base) var(--ease-glass),
+    transform var(--dur-base) var(--ease-glass);
+}
+
+/* The light edge. Without this a glass panel reads as flat translucency. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    160deg,
+    var(--glass-highlight),
+    transparent 38%,
+    transparent 62%,
+    rgba(255, 255, 255, 0.05)
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+/* Pointer-reactive sheen: --mx/--my are written by useGlassPointer on move.
+ * This is the difference between a surface and a rectangle. */
+.glass--interactive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 0%),
+    rgba(255, 255, 255, 0.10),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-glass);
+  pointer-events: none;
+}
+
+.glass--interactive:hover::after {
+  opacity: 1;
+}
+
+.glass--raised {
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-lifted);
+}
+
+/* --- controls ---------------------------------------------------------- */
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--radius-control);
+  background: var(--glass-bg);
+  color: var(--ink);
+  cursor: pointer;
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  transition:
+    background var(--dur-fast) var(--ease-glass),
+    border-color var(--dur-fast) var(--ease-glass),
+    transform var(--dur-fast) var(--ease-glass),
+    box-shadow var(--dur-fast) var(--ease-glass);
+}
+
+.btn:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-stroke-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.btn:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.btn--primary {
+  background: linear-gradient(180deg, hsl(var(--state-working) / 0.34),
+      hsl(var(--state-working) / 0.20));
+  border-color: hsl(var(--state-working) / 0.42);
+}
+
+.btn--danger {
+  background: hsl(var(--state-error) / 0.18);
+  border-color: hsl(var(--state-error) / 0.36);
+}
+
+.btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-soft);
+}
+
+.btn--quiet:hover {
+  background: var(--glass-bg);
+  color: var(--ink);
+}
+
+.btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.field {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--radius-control);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  outline: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-glass),
+    background var(--dur-fast) var(--ease-glass),
+    box-shadow var(--dur-fast) var(--ease-glass);
+}
+
+:root[data-theme="light"] .field {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.field:focus {
+  border-color: hsl(var(--state-working) / 0.5);
+  background: var(--glass-bg-strong);
+  box-shadow: 0 0 0 4px hsl(var(--state-working) / 0.14);
+}
+
+.field::placeholder {
+  color: var(--ink-faint);
+}
+
+/* Keyboard users must always see where they are. */
+:focus-visible {
+  outline: 2px solid hsl(var(--state-working) / 0.75);
+  outline-offset: 2px;
+}
+
+/* --- text ------------------------------------------------------------- */
+
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: 22px; }
+h2 { font-size: 17px; }
+h3 { font-size: 15px; }
+
+p { margin: 0; }
+
+.soft { color: var(--ink-soft); }
+.faint { color: var(--ink-faint); }
+.tiny { font-size: 12.5px; }
+.mono {
+  font-family: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+.selectable { user-select: text; }
+
+/* --- scrolling -------------------------------------------------------- */
+
+.scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-stroke-strong) transparent;
+  overscroll-behavior: contain;
+}
+
+.scroll::-webkit-scrollbar { width: 9px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--glass-stroke-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* --- shimmer for loading states (never a spinner) --------------------- */
+
+.skeleton {
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    100deg,
+    var(--glass-bg) 20%,
+    var(--glass-bg-hover) 40%,
+    var(--glass-bg) 60%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.5s var(--ease-glass) infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+
+/* The window's drag region: the whole top strip, minus interactive controls. */
+.drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

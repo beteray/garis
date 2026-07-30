@@ -16,23 +16,28 @@ Rdzeń, który działa i jest przetestowany. Bez GUI, na modelach chmurowych.
 - trwałe zadania: dziennik kroków, wznawianie po restarcie, współbieżność
 - CLI: `do`, `tasks`, `task`, `stop`, `approvals`, `approve`, `reject`, `memory`,
   `vault`, `doctor`, `activity`, `tools`, `config`, `serve`
-- 148 testów, zielone
+- 173 testy, zielone
 
 **Kryteria spełnione:** zadanie zablokowane na płatności wznawia się po symulowanym
 restarcie bez powtarzania wykonanych kroków; pamięć nie zostawia jawnego tekstu w
 pliku bazy ani w WAL; osobowość nie ma ścieżki do polityki.
 
-## Etap 2 — GUI (Tauri 2)
+## Etap 2 — GUI (Tauri 2) 🔄 w toku
 
 Aplikacja, która wygląda jak część systemu. Wymagania wizualne: `docs/UI.md` —
 Liquid Glass, framer-motion, **wszystko animowane**, animowana kula ze stanami.
 
-- powłoka Tauri 2 + React/TS, tray, autostart, Mica/Acrylic
-- zamknięcie okna nie zatrzymuje pracy
-- ekrany: główny, rozmowa, zadania, pamięć, urządzenia, subskrypcje, ustawienia,
-  diagnostyka
-- onboarding jako rozmowa, nie formularz
-- lokalne API HTTP+WebSocket jako kontrakt między rdzeniem a UI
+- ✅ lokalne API HTTP+WebSocket jako kontrakt między rdzeniem a UI (`docs/API.md`)
+- ✅ kula WebGL: sześć stanów, morfowanie między nimi, reakcja na mikrofon,
+  fallback 2D, pauza renderu przy ukrytym oknie
+- ✅ ekrany: główny, rozmowa, zadania, pamięć + sejf, urządzenia, subskrypcje,
+  ustawienia, diagnostyka
+- ✅ karty zgód: skutki nazwane po polsku, animowane potwierdzenie decyzji
+- ✅ onboarding jako rozmowa, nie formularz
+- ✅ powłoka Tauri 2 napisana: tray, hide-on-close, Mica, autostart, skrót globalny
+- ⏳ **kompilacja powłoki na Windows 11** — jedyne, czego nie dało się zrobić
+  w środowisku bez Windows i bez webkit2gtk
+- ⏳ ikony, instalator MSI/NSIS, podpis
 
 **Kryteria:** 60 fps przy 20 zadaniach; okno zamknięte → zadanie dalej kończy się
 i pojawia w powiadomieniu; `prefers-reduced-motion` respektowane; pełna obsługa
