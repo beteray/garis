@@ -17,12 +17,14 @@ from .events import EventBus
 from .memory import MemoryService
 from .models import build_router
 from .net import HttpClient
+from .notifications import NotificationGate
 from .paths import Paths
 from .runtime import ApprovalBroker, AuditLog, LeaseManager, PolicyEngine, Runtime, ToolRegistry
 from .store import SCHEMA, Database
 from .tasks import TaskStore, TaskSupervisor
 from .tools import DESKTOP_MODULES, register_all
 from .vault import Vault
+from .voice import VoiceService
 
 
 @dataclass(slots=True)
@@ -42,6 +44,8 @@ class Garis:
     planner: Planner
     verifier: Verifier
     tasks: TaskSupervisor
+    notifications: NotificationGate
+    voice: VoiceService
 
     async def do(
         self,
@@ -100,10 +104,16 @@ def build(
     store = TaskStore(db)
     tasks = TaskSupervisor(store, runtime, planner, verifier, bus=bus, config=config)
 
+    # The gate is what makes ctx.note() honest: tools raise candidates, and this
+    # decides which ones actually interrupt a person.
+    notifications = NotificationGate(config.notifications, bus=bus)
+    voice = VoiceService(config=config.voice, bus=bus, router=router)
+
     return Garis(
         paths=paths, config=config, bus=bus, db=db, vault=vault, memory=memory,
         http=http, registry=registry, runtime=runtime, router=router,
         planner=planner, verifier=verifier, tasks=tasks,
+        notifications=notifications, voice=voice,
     )
 
 

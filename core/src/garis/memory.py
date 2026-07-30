@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import re
 import time
-import unicodedata
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -28,6 +27,7 @@ from .crypto import SecretBox
 from .errors import SecretNotAllowed
 from .events import EventBus, Topic
 from .store import Database, dumps, loads
+from .text import fold_keep_shape
 from .vault import Vault, is_ref
 
 
@@ -462,8 +462,7 @@ def _infer_subject(content: str) -> str:
 
 
 def _normalise(text: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", text.lower())
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return fold_keep_shape(text)
 
 
 __all__ = [

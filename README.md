@@ -16,7 +16,7 @@ garis do "przygotuj mi notatkę z tego projektu"
 
 ## Stan projektu
 
-**Etap 1 ukończony:** silnik działa i jest przetestowany (177 testów).
+**Etap 1 ukończony:** silnik działa i jest przetestowany (243 testy).
 **Etap 2 w toku:** lokalne API i interfejs gotowe i kompilujące się; powłoka
 natywna (tray, Mica, autostart) napisana, czeka na kompilację na Windows.
 Głos, serwer i mobile — `docs/ROADMAP.md`.
@@ -119,7 +119,7 @@ sprawdzone i zapisane. Szczegóły: `docs/ARCHITECTURE.md`, zasady bezpieczeńst
 ## Rozwój
 
 ```bash
-.venv/bin/python -m pytest -q      # 177 testów
+.venv/bin/python -m pytest -q      # 243 testy
 .venv/bin/ruff check .
 .venv/bin/mypy
 

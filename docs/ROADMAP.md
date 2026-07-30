@@ -16,7 +16,7 @@ Rdzeń, który działa i jest przetestowany. Bez GUI, na modelach chmurowych.
 - trwałe zadania: dziennik kroków, wznawianie po restarcie, współbieżność
 - CLI: `do`, `tasks`, `task`, `stop`, `approvals`, `approve`, `reject`, `memory`,
   `vault`, `doctor`, `activity`, `tools`, `config`, `serve`
-- 177 testów, zielone
+- 243 testy, zielone
 
 **Kryteria spełnione:** zadanie zablokowane na płatności wznawia się po symulowanym
 restarcie bez powtarzania wykonanych kroków; pamięć nie zostawia jawnego tekstu w
@@ -43,15 +43,25 @@ Liquid Glass, framer-motion, **wszystko animowane**, animowana kula ze stanami.
 i pojawia w powiadomieniu; `prefers-reduced-motion` respektowane; pełna obsługa
 klawiaturą.
 
-## Etap 3 — głos
+## Etap 3 — głos 🔄 w toku
 
-- wejście/wyjście audio, wybór mikrofonu i głośników, kalibracja hałasu
-- słowo aktywacyjne lokalnie (openWakeWord) — strumień nie wychodzi z komputera
-- rozmowa w czasie rzeczywistym: realtime API dostawcy (Gemini Live / OpenAI
-  Realtime) tam, gdzie jest, silniki lokalne (faster-whisper + Piper) jako
-  alternatywa; wybiera router, nie użytkownik
-- przerywanie wypowiedzi GARIS-a (barge-in), push-to-talk, skrót klawiszowy
-- zmiana słowa aktywacyjnego i głosu
+Decyzje są zrobione i przetestowane; brakuje sprzętu pod spodem.
+
+- ✅ maszyna stanów rozmowy: przerywanie (barge-in) z progiem czasu, koniec tury
+  po ciszy, okno po słowie aktywacyjnym, push-to-talk, utrzymanie głosu po
+  odpowiedzi
+- ✅ słowo aktywacyjne: dopasowanie odporne na przekręcenia rozpoznawania,
+  zmienialne w locie, ignoruje mówienie *o* GARIS-ie zamiast *do* niego
+- ✅ kalibracja hałasu: próg wyprowadzany z percentyla szumu pokoju, wykrywanie
+  głośnego pomieszczenia
+- ✅ wybór drogi: realtime dostawcy / lokalnie / brak — z prywatnością i brakiem
+  sieci jako twardymi warunkami
+- ✅ wybór mikrofonu i głośników z fallbackiem, gdy urządzenie zniknie
+- ✅ bramka powiadomień: godziny ciszy, tryb gry, próg ważności, duplikaty, limit
+- ⏳ realne wejście/wyjście audio (sounddevice/WASAPI)
+- ⏳ silnik wake word na urządzeniu (openWakeWord) i pobieranie modelu
+- ⏳ podłączenie faster-whisper + Piper oraz sesji realtime dostawcy
+- ⏳ panel głosu w interfejsie: wybór urządzeń, kreator kalibracji, wybór głosu
 
 **Kryteria:** przerwanie w trakcie mówienia zatrzymuje TTS w ≤200 ms; wake word
 działa offline; brak sieci → rozmowa nadal możliwa lokalnie.

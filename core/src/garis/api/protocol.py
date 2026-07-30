@@ -137,6 +137,8 @@ def state_view(garis: Any) -> dict[str, Any]:
             "secrets": len(garis.vault.list()),
         },
         "models": garis.router.describe(),
+        "notifications": garis.notifications.describe(),
+        "voice_runtime": garis.voice.describe(),
         "capabilities": garis.runtime.describe_capabilities(),
         "active_tasks": [task_view(t) for t in tasks],
     }

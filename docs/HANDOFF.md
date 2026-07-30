@@ -14,7 +14,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (177 testów). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (243 testy). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
@@ -27,6 +27,9 @@ core/src/garis/
   agent/                                         plan → wykonaj → sprawdź → napraw
   tasks/                                         trwałość, współbieżność
   api/                                           HTTP + WebSocket dla wszystkich powierzchni
+  voice/                                         rozmowa: stany, wake word, kalibracja, wybór drogi
+  notifications.py                               bramka: cisza, gra, próg, duplikaty
+  text.py                                        składanie tekstu do porównań
   app.py cli.py                                  złożenie + CLI
 
 apps/desktop/                                    interfejs (etap 2)
@@ -120,6 +123,10 @@ Zapisane, żeby nie wpaść drugi raz:
 - **`async def` w Protocolu to nie to samo co async generator.** Protokół
   dostawcy deklarował `async def stream(...) -> AsyncIterator[str]`, czyli
   korutynę zwracającą iterator; implementacje są generatorami. mypy to złapał.
+- **NFKD nie rozkłada polskiego `ł`.** To jeden znak bez dekompozycji, więc
+  „usuń znaki składające, zostaw a-z" zamieniało je w spację: `wołam` → `wo am`.
+  Dotyczyło i wyszukiwania w pamięci, i słowa aktywacyjnego. Jedna implementacja
+  w `text.py`, jeden test.
 
 ## Etap 2 — co zrobione, co zostało
 
