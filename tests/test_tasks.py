@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from garis.agent import Planner, Verifier
 from garis.config import Config, ModelsConfig, TasksConfig
 from garis.models import ModelRouter
@@ -93,8 +91,9 @@ async def test_tasks_run_in_parallel_up_to_the_limit(runtime, bus, db) -> None:
 async def test_payment_blocks_the_task_and_persists_the_question(
     runtime, bus, config, db
 ) -> None:
-    supervisor, store, _ = build_supervisor(
-        runtime, bus, config, db, plan_reply([{"key": "zaplac", "tool": "pay", "params": {"amount": 59.0}}]),
+    supervisor, _, _ = build_supervisor(
+        runtime, bus, config, db,
+        plan_reply([{"key": "zaplac", "tool": "pay", "params": {"amount": 59.0}}]),
     )
     task = supervisor.submit("opłać domenę")
     blocked = await supervisor.wait(task.id, timeout=10)
@@ -109,7 +108,7 @@ async def test_approval_after_restart_finishes_the_task(runtime, bus, config, db
     """The full overnight story: block, restart, approve elsewhere, resume."""
     plan = plan_reply([{"key": "zaplac", "tool": "pay", "params": {"amount": 59.0}}])
 
-    first, store, _ = build_supervisor(runtime, bus, config, db, plan)
+    first, _, _ = build_supervisor(runtime, bus, config, db, plan)
     task = first.submit("opłać domenę")
     assert (await first.wait(task.id, timeout=10)).state is TaskState.BLOCKED
 
@@ -177,7 +176,7 @@ async def test_crash_recovery_relaunches_interrupted_tasks(runtime, bus, config,
     # Pretend the process was killed mid-flight.
     store.set_state(task.id, TaskState.RUNNING)
 
-    fresh, store2, _ = build_supervisor(runtime, bus, config, db, plan)
+    fresh, _, _ = build_supervisor(runtime, bus, config, db, plan)
     recovered = await fresh.recover()
 
     assert [t.id for t in recovered] == [task.id]
@@ -271,3 +270,23 @@ async def test_whole_app_accepts_a_goal(garis) -> None:
     assert task.state in (TaskState.FINISHED, TaskState.FAILED, TaskState.BLOCKED)
     assert garis.registry.has("disk_usage")
     assert task.report is not None
+
+
+async def test_blocked_task_remembers_what_it_is_waiting_for(runtime, bus, config, db) -> None:
+    """The question must survive in the database, not only in the live outcome.
+
+    Otherwise the tray, the CLI and the phone all show a blocked task with no way
+    to tell the user why it stopped.
+    """
+    supervisor, _, _ = build_supervisor(
+        runtime, bus, config, db,
+        plan_reply([{"key": "a", "tool": "pay", "params": {"amount": 12.0}}]),
+    )
+    task = supervisor.submit("opłać coś")
+    await supervisor.wait(task.id, timeout=10)
+
+    reloaded = TaskStore(db).require(task.id)
+    assert reloaded.state is TaskState.BLOCKED
+    assert reloaded.report is not None
+    assert "płatnoś" in reloaded.report["short"].lower()
+    assert "płatnoś" in reloaded.error.lower()

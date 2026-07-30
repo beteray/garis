@@ -378,7 +378,7 @@ def _processes() -> list[dict[str, Any]]:
                     "cpu_percent": info.get("cpu_percent") or 0.0,
                 }
             )
-        except Exception:  # noqa: BLE001 - processes vanish mid-iteration
+        except Exception:
             continue
     rows.sort(key=lambda r: -r["memory_mb"])
     return rows

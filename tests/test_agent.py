@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from garis.agent import AgentLoop, AgentState, Goal, Planner, Verifier
 from garis.config import Config, ModelsConfig
 from garis.models import ModelRouter
 from garis.models.providers.fake import FakeProvider, plan_reply, role_aware
 from garis.runtime import Runtime
-
 
 VERIFIED = json.dumps({"ok": True, "note": "Sprawdzone.", "unmet": []})
 NOT_VERIFIED = json.dumps({"ok": False, "note": "Brak potwierdzenia.", "unmet": ["stan"]})
@@ -36,7 +33,7 @@ def build_loop(
 
 
 async def test_goal_becomes_a_verified_result(runtime: Runtime, bus, config: Config) -> None:
-    loop, provider = build_loop(
+    loop, _ = build_loop(
         runtime,
         bus,
         config,

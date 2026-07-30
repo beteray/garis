@@ -199,12 +199,158 @@ def role_aware(
 
 
 def _reflex_reply(messages: Sequence[Message]) -> str:
-    """Bare-minimum useful behaviour when nothing was scripted."""
+    """Bare-minimum useful behaviour when nothing was scripted.
+
+    Not a toy: this is the path a fresh install takes before any API key exists.
+    GARIS should still answer "how much disk is left?" rather than refuse to work,
+    so unscripted planning requests get a real, if shallow, plan.
+    """
+    system = "\n".join(m.content for m in messages if m.role is Role.SYSTEM)
+    if PLANNER_MARKER in system:
+        return _reflex_plan(messages)
+    if VERIFIER_MARKER in system:
+        return VERIFIED
+
     last = next((m for m in reversed(messages) if m.role is Role.USER), None)
     text = (last.content if last else "").strip()
     if not text:
         return "Słucham."
     return f"Przyjąłem: {text[:200]}"
+
+
+def _reflex_plan(messages: Sequence[Message]) -> str:
+    """Pick one safe, parameterless tool that best matches the goal's words.
+
+    Deliberately limited to tools whose required parameters are empty: guessing
+    a path or a package name without a real model would be worse than admitting
+    the limit. Anything more ambitious asks the user to configure a model.
+    """
+    catalogue = _extract_catalogue(messages)
+    goal = _extract_goal(messages)
+    words = _tokens(goal)
+
+    # A goal that asks for a *change* must never be answered with read-only recon
+    # and a cheerful "done". Reporting success for work that did not happen is
+    # worse than admitting there is no model configured.
+    if words & _CHANGE_INTENT:
+        return _needs_a_model()
+
+    best: tuple[float, dict[str, Any] | None] = (0.0, None)
+    for tool in catalogue:
+        required = [
+            name for name, schema in (tool.get("params") or {}).items()
+            if isinstance(schema, dict) and schema.get("required")
+        ]
+        if required:
+            continue
+        effects = set(tool.get("effects") or [])
+        if not effects <= {"read", "network"}:
+            continue  # never guess your way into a change
+        haystack = _tokens(f"{tool.get('name', '')} {tool.get('summary', '')}")
+        score = sum(1.0 for word in words if word in haystack)
+        if score > best[0]:
+            best = (score, tool)
+
+    if best[1] is None or best[0] < 1:
+        return _needs_a_model()
+
+    tool = best[1]
+    return json.dumps(
+        {
+            "summary": f"Sprawdzę to narzędziem {tool['name']}.",
+            "assumptions": ["Działam bez modelu AI, więc wykonuję samo rozpoznanie."],
+            "steps": [
+                {
+                    "key": "rozpoznanie",
+                    "tool": tool["name"],
+                    "params": {},
+                    "purpose": tool.get("summary", ""),
+                    "expects": "dane odczytane",
+                }
+            ],
+            "question": "",
+        },
+        ensure_ascii=False,
+    )
+
+
+def _extract_catalogue(messages: Sequence[Message]) -> list[dict[str, Any]]:
+    """Find the tool catalogue among the system messages.
+
+    Scans each message separately rather than the concatenation: the planner's
+    instructions contain bracketed JSON *examples*, so a first-``[``-to-last-``]``
+    span over the joined text picks up prose and parses as nothing.
+    """
+    for message in messages:
+        if message.role is not Role.SYSTEM:
+            continue
+        start = message.content.find("[")
+        end = message.content.rfind("]")
+        if start < 0 or end <= start:
+            continue
+        try:
+            parsed = json.loads(message.content[start : end + 1])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, list):
+            tools = [t for t in parsed if isinstance(t, dict) and "name" in t]
+            if tools:
+                return tools
+    return []
+
+
+def _extract_goal(messages: Sequence[Message]) -> str:
+    for message in messages:
+        if message.role is Role.USER and message.content.startswith("CEL:"):
+            return message.content[4:].strip()
+    last = next((m for m in reversed(messages) if m.role is Role.USER), None)
+    return last.content if last else ""
+
+
+def _needs_a_model() -> str:
+    return json.dumps(
+        {
+            "summary": "",
+            "steps": [],
+            "question": "Bez skonfigurowanego modelu AI poradzę sobie tylko z prostym "
+                        "rozpoznaniem, a to zadanie wymaga realnych zmian. Dodaj klucz "
+                        "(garis vault set openai_api_key) i zlec je ponownie — wykonam "
+                        "je w całości.",
+        },
+        ensure_ascii=False,
+    )
+
+
+_STOPWORDS = frozenset(
+    {
+        "jak", "ile", "czy", "dla", "the", "and", "mnie", "mam", "moje", "moja", "moj",
+        "sprawdz", "pokaz", "zrob", "prosze", "chce", "teraz", "tego", "tym", "sie",
+    }
+)
+
+# Verb stems (5 chars, diacritic-free — matching ``_tokens``) that mean the user
+# wants something changed, not merely inspected.
+_CHANGE_INTENT = frozenset(
+    {
+        "zains", "insta", "skonf", "konfi", "napra", "wdroz", "usun", "wysla", "wysli",
+        "zmien", "utwor", "stwor", "zakti", "zaktu", "przen", "skasu", "wylac", "wlacz",
+        "resta", "uruch", "zatrz", "kupic", "zamow", "oplac", "zapla", "publi", "deplo",
+        "confi", "creat", "delet", "remov", "updat", "upgra", "fix", "send", "buy",
+    }
+)
+
+
+def _tokens(text: str) -> set[str]:
+    """Diacritic-insensitive word stems, so "dysku" matches "disk_usage"'s summary."""
+    import re
+    import unicodedata
+
+    flat = "".join(
+        ch for ch in unicodedata.normalize("NFKD", text.lower())
+        if not unicodedata.combining(ch)
+    )
+    words = {w for w in re.split(r"[^a-z0-9]+", flat) if len(w) > 2 and w not in _STOPWORDS}
+    return words | {w[:5] for w in words}
 
 
 def _rough_tokens(messages: Sequence[Message]) -> int:

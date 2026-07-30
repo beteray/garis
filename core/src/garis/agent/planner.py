@@ -196,7 +196,7 @@ class Planner:
                 continue
             try:
                 step.params = spec.validate(step.params)
-            except Exception as exc:  # noqa: BLE001 - includes ToolValidationError
+            except Exception as exc:
                 problems.append(f"{step.tool}: {exc}")
                 continue
             kept.append(step)

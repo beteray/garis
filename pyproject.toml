@@ -56,7 +56,15 @@ src = ["core/src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
-ignore = ["B008"]
+ignore = [
+    "B008",
+    # ASYNC109: ruff wants callers to wrap calls in asyncio.timeout instead of
+    # accepting a `timeout` argument. GARIS deliberately does the opposite: a
+    # timeout is part of a tool's and a provider's contract (ToolSpec.timeout,
+    # Provider.complete, LeaseManager.acquire), because the runtime — not the
+    # caller — is what guarantees nothing runs unbounded.
+    "ASYNC109",
+]
 
 [tool.mypy]
 python_version = "3.11"

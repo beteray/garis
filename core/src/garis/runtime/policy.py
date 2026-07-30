@@ -265,7 +265,7 @@ def _norm(path: str) -> str:
 
 def _target_hint(params: dict[str, Any]) -> str:
     for key in ("to", "recipient", "path", "target", "package", "url", "name", "amount"):
-        if key in params and params[key]:
+        if params.get(key):
             return f"{key}: {params[key]}"
     return ""
 

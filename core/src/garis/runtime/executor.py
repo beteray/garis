@@ -271,7 +271,7 @@ class Runtime:
             retryable = getattr(exc, "retryable", True)
             return self._reject(action, spec, "error", exc, kind="error",
                                 retryable=retryable, started=started, verdict=verdict)
-        except Exception as exc:  # noqa: BLE001 - a tool bug must not kill the daemon
+        except Exception as exc:
             return self._reject(
                 action, spec, "crash",
                 ExecutionError(f"{spec.name}: {type(exc).__name__}: {exc}", tool=spec.name),

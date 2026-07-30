@@ -176,7 +176,7 @@ def _gui() -> Any:
     """pyautogui, or a clear explanation of what is missing."""
     try:
         import pyautogui  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001 - import fails without a display too
+    except Exception as exc:
         raise Unsupported(
             "Sterowanie myszą i klawiaturą wymaga pakietu pyautogui i aktywnej sesji graficznej"
         ) from exc

@@ -114,9 +114,7 @@ class AnthropicProvider:
             ]
         if json_mode:
             # No dedicated JSON mode; a final instruction is the supported route.
-            body["messages"] = converted + [
-                {"role": "assistant", "content": "{"}
-            ]
+            body["messages"] = [*converted, {"role": "assistant", "content": "{"}]
 
         resp = await self._http.post(
             f"{self._base}/messages", headers=self._headers(), json_body=body, timeout=timeout

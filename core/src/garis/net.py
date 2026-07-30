@@ -105,8 +105,7 @@ class Transport:
             with urllib.request.urlopen(req, timeout=request.timeout, context=self._ctx) as resp:
                 if resp.status >= 400:
                     raise ExecutionError(f"HTTP {resp.status} z {request.url}")
-                for line in resp:
-                    yield line
+                yield from resp
         except urllib.error.HTTPError as exc:
             raise ExecutionError(
                 f"HTTP {exc.code} z {request.url}: {exc.read()[:300]!r}",
@@ -177,14 +176,14 @@ class HttpClient:
         req = self._prepare(
             "POST", url, headers=headers, json_body=json_body, data=None, timeout=timeout
         )
-        queue: asyncio.Queue[bytes | None | BaseException] = asyncio.Queue(maxsize=64)
+        queue: asyncio.Queue[bytes | BaseException | None] = asyncio.Queue(maxsize=64)
         loop = asyncio.get_running_loop()
 
         def pump() -> None:
             try:
                 for line in self._transport.stream(req):
                     asyncio.run_coroutine_threadsafe(queue.put(line), loop).result()
-            except BaseException as exc:  # noqa: BLE001 - forwarded to the consumer
+            except BaseException as exc:
                 asyncio.run_coroutine_threadsafe(queue.put(exc), loop).result()
             finally:
                 asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
@@ -229,10 +228,10 @@ class FakeTransport(Transport):
 
 __all__ = [
     "DEFAULT_TIMEOUT",
+    "USER_AGENT",
     "FakeTransport",
     "HttpClient",
     "Request",
     "Response",
     "Transport",
-    "USER_AGENT",
 ]

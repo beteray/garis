@@ -128,8 +128,11 @@ async def _run(
     elevated: bool,
 ) -> dict[str, Any]:
     argv = _build_argv(command, shell, elevated=elevated)
-    workdir = os.path.expandvars(os.path.expanduser(cwd)) if cwd else None
-    if workdir and not os.path.isdir(workdir):
+    # expandvars/expanduser are pure string work despite living in os.path.
+    workdir = os.path.expandvars(os.path.expanduser(cwd)) if cwd else None  # noqa: ASYNC240
+    # Touching the filesystem is blocking; a stalled network drive must not
+    # freeze every other task sharing this event loop.
+    if workdir and not await asyncio.to_thread(os.path.isdir, workdir):
         raise ExecutionError(f"Katalog roboczy nie istnieje: {workdir}", retryable=False)
 
     ctx.progress(f"Uruchamiam: {command[:120]}")

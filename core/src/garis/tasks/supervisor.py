@@ -19,11 +19,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from ..agent import AgentLoop, AgentState, Journal, Outcome, Planner, Verifier
+from ..agent import AgentLoop, AgentState, Outcome, Planner, Verifier
 from ..config import Config
 from ..errors import TaskAborted
 from ..events import EventBus, Topic
 from ..runtime import ActionResult, Runtime
+from ..store import dumps
 from .models import StepRecord, TaskRecord, TaskState
 from .store import TaskStore
 
@@ -150,7 +151,15 @@ class TaskSupervisor:
 
     def _apply_outcome(self, task_id: str, outcome: Outcome) -> None:
         if outcome.state is AgentState.BLOCKED:
-            self.store.set_state(task_id, TaskState.BLOCKED)
+            # Persist the question, not just the state: whatever asks later — the
+            # CLI, the tray, the phone — needs to know what GARIS is waiting for,
+            # and the in-memory outcome is gone after a restart.
+            self.store.set_state(
+                task_id,
+                TaskState.BLOCKED,
+                report=dumps(outcome.report.to_dict()),
+                error=outcome.question,
+            )
             self.bus.emit(
                 Topic.TASK_BLOCKED,
                 task_id=task_id,

@@ -11,7 +11,7 @@ import pytest
 
 from garis.config import AutonomyConfig, PersonaConfig
 from garis.paths import Paths
-from garis.runtime import Action, Decision, Effect, ParamSpec, PolicyEngine, ToolRegistry
+from garis.runtime import Action, Decision, Effect, PolicyEngine, ToolRegistry
 from garis.runtime.policy import NON_NEGOTIABLE_CONFIRM
 from garis.runtime.registry import ToolSpec
 

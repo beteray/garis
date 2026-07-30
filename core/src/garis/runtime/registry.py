@@ -21,7 +21,7 @@ from ..errors import ToolNotFound, ToolValidationError, Unsupported
 from .action import Effect
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .context import ToolContext
+    pass
 
 Handler = Callable[..., Awaitable[Any]]
 ResourceFn = Callable[[dict[str, Any]], Sequence[str]]
@@ -77,7 +77,8 @@ class ParamSpec:
             raise ToolValidationError(
                 f"Parametr {name!r} musi być jednym z: {allowed} (otrzymano {out!r})"
             )
-        if self.max_length is not None and isinstance(out, (str, list)) and len(out) > self.max_length:
+        too_long = self.max_length is not None and isinstance(out, (str, list))
+        if too_long and len(out) > self.max_length:
             raise ToolValidationError(
                 f"Parametr {name!r} jest za długi (maks. {self.max_length})"
             )

@@ -80,7 +80,7 @@ class OllamaProvider:
             if not resp.ok:
                 return False
             payload = resp.json()
-        except Exception:  # noqa: BLE001 - "no Ollama here" is a normal outcome
+        except Exception:
             self._probed = True
             self._installed = ()
             return False

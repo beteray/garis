@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from garis.errors import ApprovalDenied, ApprovalRequired, PolicyDenied
-from garis.runtime import Action, ApprovalState, Runtime
+from garis.runtime import ApprovalState, Runtime
 from garis.runtime.audit import REDACTED
 
 

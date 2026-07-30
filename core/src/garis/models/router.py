@@ -196,7 +196,7 @@ class ModelRouter:
                 if not exc.retryable:
                     continue
                 continue
-            except Exception as exc:  # noqa: BLE001 - never let a vendor bug escape
+            except Exception as exc:
                 errors.append(f"{choice}: {type(exc).__name__}: {exc}")
                 self._emit("model.fallback", model=str(choice), error=str(exc))
                 continue

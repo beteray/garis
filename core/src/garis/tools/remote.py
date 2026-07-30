@@ -191,7 +191,9 @@ def register(registry: ToolRegistry) -> None:
         out = stdout.decode("utf-8", errors="replace")
         err = stderr.decode("utf-8", errors="replace")
         if process.returncode != 0:
-            raise ExecutionError(f"ssh {host} zwróciło {process.returncode}: {err[:400] or out[:400]}")
+            raise ExecutionError(
+                f"ssh {host} zwróciło {process.returncode}: {err[:400] or out[:400]}"
+            )
         return {"host": host, "exit_code": process.returncode,
                 "stdout": out[:20000], "stderr": err[:4000]}
 

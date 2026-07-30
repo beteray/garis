@@ -353,10 +353,11 @@ class MemoryService:
 
     def stats(self) -> dict[str, Any]:
         rows = self.db.query("SELECT kind, COUNT(*) AS n FROM memory GROUP BY kind")
+        pinned = self.db.one("SELECT COUNT(*) AS n FROM memory WHERE pinned = 1")
         return {
             "total": sum(r["n"] for r in rows),
             "by_kind": {r["kind"]: r["n"] for r in rows},
-            "pinned": (self.db.one("SELECT COUNT(*) AS n FROM memory WHERE pinned = 1") or {"n": 0})["n"],
+            "pinned": pinned["n"] if pinned else 0,
         }
 
     def purge_expired(self) -> int:
