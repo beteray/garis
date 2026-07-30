@@ -364,10 +364,28 @@ async def cmd_config(garis: Garis, args: argparse.Namespace) -> int:
 
 
 async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
-    """Run in the background, the way the tray app will: recover, then wait."""
+    """Run in the background, the way the tray app will: recover, serve, wait.
+
+    Recovery comes first: anything interrupted by a reboot resumes before the API
+    starts accepting new work, so a client that connects immediately sees the true
+    state rather than an empty one.
+    """
+    from .api import ApiServer
+
     recovered = await garis.tasks.recover()
     if recovered:
         _out(_dim(f"Wznowiłem {len(recovered)} zadań po restarcie."))
+
+    api: ApiServer | None = None
+    if not args.no_api:
+        api = ApiServer(garis, host=args.host, port=args.port)
+        await api.start()
+        _out(f"API: {api.url}")
+        if args.print_token:
+            _out(_dim(f"Token: {api.token}"))
+        else:
+            _out(_dim("Token: garis serve --print-token (albo garis vault list)"))
+
     _out(f"GARIS działa. Katalog: {garis.paths.home}. Zakończ: Ctrl+C.")
     subscription = garis.bus.subscribe(Topic.TASK_FINISHED, Topic.TASK_FAILED,
                                        Topic.TASK_BLOCKED, Topic.NOTICE)
@@ -375,7 +393,8 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
         async for event in subscription:
             payload = event.payload
             if event.topic == Topic.NOTICE:
-                _out(payload.get("message", ""))
+                if not payload.get("silent"):
+                    _out(payload.get("message", ""))
             elif event.topic == Topic.TASK_BLOCKED:
                 _out(f"[{payload.get('task_id')}] {payload.get('question', 'czekam na zgodę')}")
             else:
@@ -384,6 +403,8 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
         pass
     finally:
         subscription.close()
+        if api is not None:
+            await api.stop()
     return EXIT_OK
 
 
@@ -469,11 +490,25 @@ def build_parser() -> argparse.ArgumentParser:
     config.add_argument("value", nargs="?")
     config.set_defaults(handler=cmd_config)
 
-    sub.add_parser("serve", help="Działaj w tle (tak jak w zasobniku)").set_defaults(
-        handler=cmd_serve
-    )
+    serve = sub.add_parser("serve", help="Działaj w tle i wystaw lokalne API")
+    serve.add_argument("--host", default=None, help="Domyślnie 127.0.0.1")
+    serve.add_argument("--port", type=int, default=None)
+    serve.add_argument("--no-api", action="store_true", help="Bez serwera API")
+    serve.add_argument("--print-token", action="store_true",
+                       help="Wypisz token API (potrzebny interfejsowi)")
+    serve.set_defaults(handler=cmd_serve)
+
+    token = sub.add_parser("token", help="Pokaż token lokalnego API")
+    token.set_defaults(handler=cmd_token)
 
     return parser
+
+
+async def cmd_token(garis: Garis, args: argparse.Namespace) -> int:
+    from .api import ensure_token
+
+    _out(ensure_token(garis))
+    return EXIT_OK
 
 
 async def _run(args: argparse.Namespace) -> int:
