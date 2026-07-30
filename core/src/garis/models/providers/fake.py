@@ -158,6 +158,46 @@ def plan_reply(steps: Sequence[dict[str, Any]], *, summary: str = "") -> str:
     )
 
 
+VERIFIED = json.dumps({"ok": True, "note": "Sprawdzone.", "unmet": []}, ensure_ascii=False)
+
+# Substrings that identify which of GARIS's prompts arrived. They mirror
+# ``agent.planner.SYSTEM_PROMPT`` and ``agent.verify.VERIFY_PROMPT``; this module
+# cannot import them (models must not depend on agent), so
+# ``test_fake_provider.py`` asserts they still match the real prompts.
+PLANNER_MARKER = "planowania GARIS"
+VERIFIER_MARKER = "Oceń, czy cel"
+
+
+def role_aware(
+    plans: str | Sequence[str],
+    *,
+    verification: str = VERIFIED,
+    chat: str = "Przyjąłem.",
+) -> Callable[[Sequence[Message]], str]:
+    """Reply according to *which* prompt arrived, not call order.
+
+    A queue of replies breaks as soon as more than one task shares a provider:
+    task two's planning request collides with task one's verification. Routing by
+    role keeps one fake provider correct for any number of concurrent tasks, while
+    successive planning calls still walk the list, which is how a repair
+    ("try another way") is scripted.
+    """
+    queue = [plans] if isinstance(plans, str) else list(plans)
+    used = {"plans": 0}
+
+    def reply(messages: Sequence[Message]) -> str:
+        system = "\n".join(m.content for m in messages if m.role is Role.SYSTEM)
+        if PLANNER_MARKER in system:
+            index = min(used["plans"], len(queue) - 1)
+            used["plans"] += 1
+            return queue[index]
+        if VERIFIER_MARKER in system:
+            return verification
+        return chat
+
+    return reply
+
+
 def _reflex_reply(messages: Sequence[Message]) -> str:
     """Bare-minimum useful behaviour when nothing was scripted."""
     last = next((m for m in reversed(messages) if m.role is Role.USER), None)
@@ -171,4 +211,13 @@ def _rough_tokens(messages: Sequence[Message]) -> int:
     return sum(len(m.content) for m in messages) // 4
 
 
-__all__ = ["SPEC", "FakeProvider", "plan_reply", "tool_call_reply"]
+__all__ = [
+    "PLANNER_MARKER",
+    "SPEC",
+    "VERIFIED",
+    "VERIFIER_MARKER",
+    "FakeProvider",
+    "plan_reply",
+    "role_aware",
+    "tool_call_reply",
+]

@@ -91,12 +91,19 @@ class TaskSupervisor:
         return task
 
     def resume(self, task_id: str) -> TaskRecord:
-        """Re-enter a BLOCKED task, e.g. after an approval or a missing answer arrives."""
+        """Re-enter a BLOCKED task, e.g. after an approval or a missing answer arrives.
+
+        The state flips to PENDING synchronously, before the coroutine is scheduled.
+        Otherwise the task would still read as BLOCKED to everything watching it —
+        the UI, the API, ``wait()`` — until the event loop happened to get around
+        to it, which looks exactly like an approval that did nothing.
+        """
         task = self.store.require(task_id)
-        if task.state is not TaskState.BLOCKED:
+        if task.state not in (TaskState.BLOCKED, TaskState.PENDING):
             return task
+        self.store.set_state(task_id, TaskState.PENDING, error="")
         self._launch(task_id)
-        return task
+        return self.store.require(task_id)
 
     def stop(self, task_id: str) -> bool:
         """Ask a running task to stop. Cooperative: it stops between steps, not mid-write."""

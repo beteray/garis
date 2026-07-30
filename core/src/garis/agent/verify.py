@@ -23,8 +23,8 @@ Oceń, czy cel został osiągnięty, na podstawie rzeczywistych wyników kroków
 Bądź surowy: „polecenie się wykonało” nie znaczy „cel osiągnięty”. Jeśli wyniki
 nie potwierdzają rezultatu, uznaj cel za nieosiągnięty i napisz, czego brakuje.
 
-Odpowiadaj wyłącznie JSON-em:
-{"ok": true/false, "note": "jedno zdanie", "unmet": ["niespełnione kryteria"]}
+Odpowiadaj wyłącznie JSON-em (nawiasy podwójne poniżej to escape dla str.format):
+{{"ok": true/false, "note": "jedno zdanie", "unmet": ["niespełnione kryteria"]}}
 Odpowiadaj w języku: {language}.
 """
 
