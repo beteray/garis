@@ -265,7 +265,9 @@ class ApiServer:
     # -------------------------------------------------------------------- routes
 
     def _build_routes(self) -> list[tuple[str, re.Pattern[str], Handler, bool]]:
-        def route(method: str, path: str, handler: Handler, *, auth: bool = True):  # type: ignore[no-untyped-def]
+        def route(
+            method: str, path: str, handler: Handler, *, auth: bool = True
+        ) -> tuple[str, re.Pattern[str], Handler, bool]:
             pattern = re.compile(
                 re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", path.rstrip("/") or "/")
             )

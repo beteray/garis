@@ -77,8 +77,8 @@ class ParamSpec:
             raise ToolValidationError(
                 f"Parametr {name!r} musi być jednym z: {allowed} (otrzymano {out!r})"
             )
-        too_long = self.max_length is not None and isinstance(out, (str, list))
-        if too_long and len(out) > self.max_length:
+        limit = self.max_length
+        if limit is not None and isinstance(out, (str, list)) and len(out) > limit:
             raise ToolValidationError(
                 f"Parametr {name!r} jest za długi (maks. {self.max_length})"
             )

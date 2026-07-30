@@ -182,7 +182,9 @@ class Provider(Protocol):
         timeout: float = 120.0,
     ) -> Completion: ...
 
-    async def stream(
+    # Not `async def`: implementations are async *generators*, so the call
+    # returns the iterator directly rather than a coroutine yielding one.
+    def stream(
         self,
         model: ModelSpec,
         messages: Sequence[Message],

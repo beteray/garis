@@ -11,11 +11,13 @@ import asyncio
 import json
 import sqlite3
 import threading
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .errors import StoreError
+
+T = TypeVar("T")
 
 SCHEMA: list[tuple[int, str]] = [
     (
@@ -272,7 +274,7 @@ class Database:
         with self._lock:
             return self._conn.execute(sql, params).fetchone()
 
-    async def run(self, fn, *args, **kwargs):  # type: ignore[no-untyped-def]
+    async def run(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     # --- key/value helpers ---

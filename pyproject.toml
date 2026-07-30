@@ -70,4 +70,9 @@ ignore = [
 python_version = "3.11"
 files = ["core/src/garis"]
 ignore_missing_imports = true
-warn_unused_ignores = true
+# Off on purpose. Large parts of this codebase are platform-conditional (winreg,
+# pywin32, pyautogui, psutil) and optional-dependency-conditional, so an ignore
+# that is required on Windows with the extras installed is "unused" on a Linux
+# CI box — and vice versa. Flagging that churn would train us to delete ignores
+# the other platform needs.
+warn_unused_ignores = false

@@ -43,20 +43,21 @@ const NAV: [View, string, string][] = [
 ];
 
 export default function App() {
-  const {
-    view,
-    setView,
-    agentState,
-    level,
-    engine,
-    connection,
-    approvals,
-    tasks,
-    setApi,
-    handleEvent,
-    setConnection,
-    refresh,
-  } = useStore();
+  // One selector per value. `useStore()` without a selector subscribes to the
+  // whole store, so every progress line from every running task would re-render
+  // the entire tree — the exact opposite of the 60 fps requirement.
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
+  const agentState = useStore((s) => s.agentState);
+  const level = useStore((s) => s.level);
+  const engine = useStore((s) => s.engine);
+  const connection = useStore((s) => s.connection);
+  const approvals = useStore((s) => s.approvals);
+  const tasks = useStore((s) => s.tasks);
+  const setApi = useStore((s) => s.setApi);
+  const handleEvent = useStore((s) => s.handleEvent);
+  const setConnection = useStore((s) => s.setConnection);
+  const refresh = useStore((s) => s.refresh);
 
   const [ready, setReady] = useState(false);
   const [onboarding, setOnboarding] = useState(false);

@@ -251,12 +251,14 @@ def _build(cls: type, data: Any) -> Any:
         value = data[f.name]
         annotation = _unwrap_optional(hints.get(f.name, Any))
         origin = typing.get_origin(annotation)
-        if dataclasses.is_dataclass(annotation) and isinstance(value, dict):
+        if isinstance(annotation, type) and dataclasses.is_dataclass(annotation) \
+                and isinstance(value, dict):
             kwargs[f.name] = _build(annotation, value)
         elif origin is dict:
             key_t, val_t = typing.get_args(annotation)
             del key_t
-            if dataclasses.is_dataclass(val_t) and isinstance(value, dict):
+            if isinstance(val_t, type) and dataclasses.is_dataclass(val_t) \
+                    and isinstance(value, dict):
                 kwargs[f.name] = {k: _build(val_t, v) for k, v in value.items()}
             else:
                 kwargs[f.name] = value

@@ -404,3 +404,106 @@ async def test_stopping_the_server_closes_clients(server: ApiServer) -> None:
     assert server.client_count == 1
     await server.stop()
     assert server.client_count == 0
+
+
+# ------------------------------------------------------- contract with the UI
+
+
+# Every path the desktop interface reads out of /api/state. Hand-written types in
+# apps/desktop/src/lib/api.ts cannot be checked against Python at build time, so
+# this list is the seam: if the engine stops sending one of these, the UI breaks
+# silently at runtime and this test fails loudly instead.
+UI_STATE_PATHS = [
+    "protocol",
+    "version",
+    "identity.name",
+    "identity.address_as",
+    "identity.language",
+    "identity.onboarded",
+    "persona.preset",
+    "persona.brevity",
+    "persona.humor",
+    "voice.enabled",
+    "voice.wake_word",
+    "voice.wake_word_enabled",
+    "voice.push_to_talk",
+    "voice.voice_id",
+    "dev.verbose",
+    "dev.developer_mode",
+    "counts.active_tasks",
+    "counts.pending_approvals",
+    "counts.memories",
+    "counts.secrets",
+    "models.privacy",
+    "models.spend",
+    "models.providers",
+    "models.picks",
+    "capabilities.tools_total",
+    "capabilities.tools_available",
+    "capabilities.categories",
+    "capabilities.unsupported_here",
+    "capabilities.policy.confirm_effects",
+    "capabilities.policy.download_notice",
+    "capabilities.policy.never",
+    "active_tasks",
+]
+
+
+def _dig(payload: Any, path: str) -> Any:
+    node = payload
+    for part in path.split("."):
+        assert isinstance(node, dict), f"{path}: {part} nie jest obiektem"
+        assert part in node, f"brak pola {path}"
+        node = node[part]
+    return node
+
+
+async def test_state_carries_every_field_the_interface_reads(server: ApiServer) -> None:
+    _, body = await call(server, "GET", "/api/state")
+    for path in UI_STATE_PATHS:
+        _dig(body, path)
+
+
+async def test_provider_entries_have_the_shape_the_settings_screen_expects(
+    server: ApiServer,
+) -> None:
+    _, body = await call(server, "GET", "/api/state")
+    for provider in body["models"]["providers"]:
+        assert {"name", "available", "models"} <= set(provider)
+
+
+async def test_task_payload_carries_every_field_the_interface_reads(
+    server: ApiServer, garis
+) -> None:
+    _, created = await call(server, "POST", "/api/tasks", body={"goal": "sprawdź dysk"})
+    await garis.tasks.wait(created["task_id"], timeout=20)
+    _, task = await call(server, "GET", f"/api/tasks/{created['task_id']}")
+
+    for field in ("id", "goal", "state", "criteria", "origin", "target",
+                  "created_at", "updated_at", "error", "question", "steps",
+                  "approvals", "plan"):
+        assert field in task, f"brak pola zadania: {field}"
+    for step in task["steps"]:
+        assert {"tool", "state", "step_key", "ordinal"} <= set(step)
+
+
+async def test_approval_payload_carries_every_field_the_card_reads(
+    server: ApiServer, garis
+) -> None:
+    from garis.errors import ApprovalRequired
+    from garis.runtime import Effect, ParamSpec
+
+    @garis.registry.tool(
+        "contract_pay", "Płaci.", params={"amount": ParamSpec("float", required=True)},
+        effects=[Effect.PAYMENT],
+    )
+    async def contract_pay(ctx, amount):  # type: ignore[no-untyped-def]
+        return {"paid": amount}
+
+    with pytest.raises(ApprovalRequired):
+        await garis.runtime.perform_tool("contract_pay", amount=7.0)
+
+    _, body = await call(server, "GET", "/api/approvals")
+    approval = body["approvals"][0]
+    assert {"id", "task_id", "tool", "prompt", "effects", "state",
+            "requested_at"} <= set(approval)

@@ -16,7 +16,7 @@ Rdzeń, który działa i jest przetestowany. Bez GUI, na modelach chmurowych.
 - trwałe zadania: dziennik kroków, wznawianie po restarcie, współbieżność
 - CLI: `do`, `tasks`, `task`, `stop`, `approvals`, `approve`, `reject`, `memory`,
   `vault`, `doctor`, `activity`, `tools`, `config`, `serve`
-- 173 testy, zielone
+- 177 testów, zielone
 
 **Kryteria spełnione:** zadanie zablokowane na płatności wznawia się po symulowanym
 restarcie bez powtarzania wykonanych kroków; pamięć nie zostawia jawnego tekstu w

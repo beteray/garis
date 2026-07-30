@@ -5,9 +5,11 @@ Nothing above this package names a model. Ask for a :class:`Need`, get an answer
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..config import Config, ProviderConfig
+from ..events import EventBus
 from ..net import HttpClient
 from .base import (
     Capability,
@@ -37,7 +39,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 # Provider name -> how to build it. Keys come from config.models.providers, so a
 # user enabling "gemini" in onboarding is all it takes to light this up.
-_CLOUD_BUILDERS = {
+_CLOUD_BUILDERS: dict[str, Callable[..., Provider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
@@ -120,11 +122,11 @@ def build_router(
     *,
     vault: Vault | None = None,
     http: HttpClient | None = None,
-    bus: object | None = None,
+    bus: EventBus | None = None,
     include_fake: bool = False,
 ) -> ModelRouter:
     providers = build_providers(config, vault=vault, http=http, include_fake=include_fake)
-    return ModelRouter(providers, config.models, bus=bus)  # type: ignore[arg-type]
+    return ModelRouter(providers, config.models, bus=bus)
 
 
 __all__ = [

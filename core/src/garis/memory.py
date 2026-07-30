@@ -19,6 +19,7 @@ import re
 import time
 import unicodedata
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -146,7 +147,7 @@ class MemoryService:
         *,
         kind: MemoryKind | str = MemoryKind.FACT,
         subject: str = "",
-        tags: tuple[str, ...] | list[str] = (),
+        tags: Sequence[str] = (),
         scope: Scope | str = Scope.PERMANENT,
         source: str = "user",
         confidence: float = 1.0,
@@ -208,7 +209,7 @@ class MemoryService:
         *,
         content: str | None = None,
         subject: str | None = None,
-        tags: tuple[str, ...] | list[str] | None = None,
+        tags: Sequence[str] | None = None,
         scope: Scope | str | None = None,
         confidence: float | None = None,
         pinned: bool | None = None,
@@ -256,7 +257,7 @@ class MemoryService:
             self._notify("forgotten", record)
         return bool(cur.rowcount)
 
-    def forget_matching(self, query: str, *, limit: int = 10) -> list[MemoryRecord]:
+    def forget_matching(self, query: str, *, limit: int = 10) -> Sequence[MemoryRecord]:
         """Back "zapomnij o tym" — delete what the phrase clearly points at."""
         found = self.search(query, limit=limit)
         for record in found:
@@ -280,7 +281,7 @@ class MemoryService:
         subject: str | None = None,
         limit: int = 200,
         include_expired: bool = False,
-    ) -> list[MemoryRecord]:
+    ) -> Sequence[MemoryRecord]:
         sql = "SELECT * FROM memory WHERE 1 = 1"
         params: list[Any] = []
         if kind is not None:
@@ -309,7 +310,7 @@ class MemoryService:
                     break
         return found
 
-    def search(self, query: str, *, limit: int = 20) -> list[MemoryRecord]:
+    def search(self, query: str, *, limit: int = 20) -> Sequence[MemoryRecord]:
         """Token search over subject, preview and tags, then over decrypted content.
 
         Plain-text preview covers the common case cheaply; the content pass catches
@@ -337,15 +338,17 @@ class MemoryService:
         self._touch(found)
         return found
 
-    def context_for(self, goal: str, *, limit: int = 12) -> list[MemoryRecord]:
+    def context_for(self, goal: str, *, limit: int = 12) -> Sequence[MemoryRecord]:
         """Memories worth putting in front of the planner for this goal."""
-        relevant = self.search(goal, limit=limit)
+        relevant = list(self.search(goal, limit=limit))
         if len(relevant) >= limit:
             return relevant
         seen = {r.id for r in relevant}
-        for record in self.list(kind=MemoryKind.STYLE, limit=4) + self.list(
-            kind=MemoryKind.PREFERENCE, limit=6
-        ):
+        background = [
+            *self.list(kind=MemoryKind.STYLE, limit=4),
+            *self.list(kind=MemoryKind.PREFERENCE, limit=6),
+        ]
+        for record in background:
             if record.id not in seen:
                 relevant.append(record)
                 seen.add(record.id)
@@ -426,7 +429,7 @@ class MemoryService:
             expires_at=row["expires_at"],
         )
 
-    def _touch(self, records: list[MemoryRecord]) -> None:
+    def _touch(self, records: Sequence[MemoryRecord]) -> None:
         if not records:
             return
         now = time.time()

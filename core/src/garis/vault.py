@@ -12,6 +12,7 @@ possible moment, immediately before the handler runs.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -120,7 +121,7 @@ class Vault:
         row = self.db.one("SELECT * FROM secrets WHERE name = ?", (_clean(name),))
         return _row(row) if row else None
 
-    def list(self) -> list[SecretInfo]:
+    def list(self) -> Sequence[SecretInfo]:
         """Names and metadata only — this is what the settings screen shows."""
         return [_row(r) for r in self.db.query("SELECT * FROM secrets ORDER BY name")]
 
@@ -139,7 +140,7 @@ class Vault:
                 user_message=f"Nie mam zapisanego dostępu „{name}”. Podasz go?",
             ) from None
 
-    def resolve_tree(self, params: Any) -> tuple[Any, list[str]]:
+    def resolve_tree(self, params: Any) -> tuple[Any, Sequence[str]]:
         """Substitute every vault reference in a parameter tree.
 
         Returns the resolved tree and the names used, so the caller can redact

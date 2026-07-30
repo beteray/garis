@@ -12,7 +12,7 @@
  * this thing runs all day in the background.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AgentState } from "../lib/api";
 import { prefersReducedMotion } from "../lib/motion";
 
@@ -174,7 +174,9 @@ export function Orb({ state, level = 0, size = 340, className }: OrbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stateRef = useRef(state);
   const levelRef = useRef(level);
-  const fallbackRef = useRef(false);
+  // State, not a ref: a ref mutated inside the effect never re-renders, so the
+  // fallback would stay hidden forever on exactly the machines that need it.
+  const [fallback, setFallback] = useState(false);
 
   stateRef.current = state;
   levelRef.current = level;
@@ -189,8 +191,7 @@ export function Orb({ state, level = 0, size = 340, className }: OrbProps) {
         | null) ?? null;
 
     if (!gl) {
-      fallbackRef.current = true;
-      canvas.dataset.fallback = "true";
+      setFallback(true);
       return;
     }
 
@@ -198,8 +199,7 @@ export function Orb({ state, level = 0, size = 340, className }: OrbProps) {
     const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
     const program = gl.createProgram();
     if (!vertex || !fragment || !program) {
-      fallbackRef.current = true;
-      canvas.dataset.fallback = "true";
+      setFallback(true);
       return;
     }
 
@@ -207,8 +207,7 @@ export function Orb({ state, level = 0, size = 340, className }: OrbProps) {
     gl.attachShader(program, fragment);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      fallbackRef.current = true;
-      canvas.dataset.fallback = "true";
+      setFallback(true);
       return;
     }
     gl.useProgram(program);
@@ -351,7 +350,11 @@ export function Orb({ state, level = 0, size = 340, className }: OrbProps) {
       />
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height: "100%", display: "block" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: fallback ? "none" : "block",
+        }}
         role="img"
         aria-label={`GARIS: ${STATE_LABELS[state] ?? state}`}
       />
@@ -364,7 +367,7 @@ export function Orb({ state, level = 0, size = 340, className }: OrbProps) {
           position: "absolute",
           inset: 0,
           borderRadius: "50%",
-          display: fallbackRef.current ? "block" : "none",
+          display: fallback ? "block" : "none",
           background: `radial-gradient(circle at 42% 38%, hsl(${look.hue} 92% 66% / 0.95), hsl(${look.hue2} 88% 46% / 0.65) 46%, transparent 70%)`,
           animation: "orbBreathe 4.2s ease-in-out infinite",
         }}

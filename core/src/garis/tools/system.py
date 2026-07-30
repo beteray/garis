@@ -217,13 +217,13 @@ def register(registry: ToolRegistry) -> None:
         category="system",
     )
     async def registry_read(ctx: ToolContext, key: str, name: str = "") -> dict[str, Any]:
-        import winreg
+        reg = _winreg()
 
         root, subkey = _split_registry(key)
 
         def read() -> Any:
-            with winreg.OpenKey(root, subkey) as handle:
-                value, _ = winreg.QueryValueEx(handle, name)
+            with reg.OpenKey(root, subkey) as handle:
+                value, _ = reg.QueryValueEx(handle, name)
                 return value
 
         try:
@@ -250,19 +250,19 @@ def register(registry: ToolRegistry) -> None:
     async def registry_write(
         ctx: ToolContext, key: str, name: str, value: str, type: str = "string"
     ) -> dict[str, Any]:
-        import winreg
+        reg = _winreg()
 
         root, subkey = _split_registry(key)
         kinds = {
-            "string": winreg.REG_SZ,
-            "dword": winreg.REG_DWORD,
-            "expand_string": winreg.REG_EXPAND_SZ,
+            "string": reg.REG_SZ,
+            "dword": reg.REG_DWORD,
+            "expand_string": reg.REG_EXPAND_SZ,
         }
         payload: Any = int(value) if type == "dword" else value
 
         def write() -> None:
-            with winreg.CreateKeyEx(root, subkey, 0, winreg.KEY_SET_VALUE) as handle:
-                winreg.SetValueEx(handle, name, 0, kinds[type], payload)
+            with reg.CreateKeyEx(root, subkey, 0, reg.KEY_SET_VALUE) as handle:
+                reg.SetValueEx(handle, name, 0, kinds[type], payload)
 
         await asyncio.to_thread(write)
         return {"key": key, "name": name, "written": True}
@@ -470,21 +470,34 @@ def _memory() -> dict[str, Any]:
 def _addresses() -> list[str]:
     try:
         host = socket.gethostname()
-        return sorted({info[4][0] for info in socket.getaddrinfo(host, None)})
+        return sorted({str(info[4][0]) for info in socket.getaddrinfo(host, None)})
     except OSError:
         return []
 
 
-def _split_registry(key: str) -> tuple[Any, str]:
+def _winreg() -> Any:
+    """The winreg module, typed as Any.
+
+    It only exists on Windows, so a type checker running anywhere else cannot see
+    its members. Reaching for it through one accessor keeps the rest of this file
+    honestly typed instead of carrying per-line ignores that mean the opposite
+    thing on the platform this code actually runs on.
+    """
     import winreg
 
+    return winreg
+
+
+def _split_registry(key: str) -> tuple[Any, str]:
+    reg = _winreg()
+
     roots = {
-        "HKCU": winreg.HKEY_CURRENT_USER,
-        "HKEY_CURRENT_USER": winreg.HKEY_CURRENT_USER,
-        "HKLM": winreg.HKEY_LOCAL_MACHINE,
-        "HKEY_LOCAL_MACHINE": winreg.HKEY_LOCAL_MACHINE,
-        "HKCR": winreg.HKEY_CLASSES_ROOT,
-        "HKU": winreg.HKEY_USERS,
+        "HKCU": reg.HKEY_CURRENT_USER,
+        "HKEY_CURRENT_USER": reg.HKEY_CURRENT_USER,
+        "HKLM": reg.HKEY_LOCAL_MACHINE,
+        "HKEY_LOCAL_MACHINE": reg.HKEY_LOCAL_MACHINE,
+        "HKCR": reg.HKEY_CLASSES_ROOT,
+        "HKU": reg.HKEY_USERS,
     }
     cleaned = key.replace("/", "\\").strip("\\")
     head, _, rest = cleaned.partition("\\")

@@ -9,6 +9,7 @@ restarts — without replaying steps that already ran.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from ..agent.goal import Plan
@@ -54,7 +55,7 @@ class TaskStore:
         state: TaskState | str | None = None,
         active_only: bool = False,
         limit: int = 200,
-    ) -> list[TaskRecord]:
+    ) -> Sequence[TaskRecord]:
         sql = "SELECT * FROM tasks WHERE 1 = 1"
         params: list[Any] = []
         if state is not None:
@@ -155,7 +156,7 @@ class TaskStore:
         )
         return {r["step_key"]: loads(r["result"]) for r in rows}
 
-    def steps_for(self, task_id: str) -> list[StepRecord]:
+    def steps_for(self, task_id: str) -> Sequence[StepRecord]:
         rows = self.db.query(
             "SELECT * FROM task_steps WHERE task_id = ? ORDER BY ordinal", (task_id,)
         )
@@ -169,7 +170,7 @@ class TaskStore:
         )
         return cur.rowcount or 0
 
-    def recover_incomplete(self) -> list[TaskRecord]:
+    def recover_incomplete(self) -> Sequence[TaskRecord]:
         """Tasks left RUNNING when the process died. Called once at startup."""
         rows = self.db.query(
             "SELECT * FROM tasks WHERE state = ?", (TaskState.RUNNING.value,)

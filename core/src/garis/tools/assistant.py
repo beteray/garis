@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from ..errors import ExecutionError
-from ..memory import MemoryKind, Scope, looks_like_secret
+from ..memory import MemoryKind, MemoryService, Scope, looks_like_secret
 from ..runtime import Effect, ParamSpec, ToolContext, ToolRegistry
 
 KIND_CHOICES = tuple(k.value for k in MemoryKind)
@@ -215,7 +215,7 @@ def register(registry: ToolRegistry) -> None:
         return {"contains_secret": bool(hit), "pattern": hit or ""}
 
 
-def _memory(ctx: ToolContext):  # type: ignore[no-untyped-def]
+def _memory(ctx: ToolContext) -> MemoryService:
     if ctx.memory is None:
         raise ExecutionError("Pamięć nie jest podłączona", retryable=False)
     return ctx.memory

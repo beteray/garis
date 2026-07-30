@@ -270,6 +270,22 @@ p { margin: 0; }
   animation: shimmer 1.5s var(--ease-glass) infinite;
 }
 
+/* The orb's Canvas/CSS fallback for machines without WebGL. It has to breathe
+   too — a still circle would read as a frozen app, which is the opposite of
+   what the orb exists to communicate. */
+@keyframes orbBreathe {
+  0%, 100% {
+    transform: scale(0.97);
+    opacity: 0.82;
+    filter: blur(0px);
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+    filter: blur(1px);
+  }
+}
+
 @keyframes shimmer {
   from { background-position: 180% 0; }
   to { background-position: -80% 0; }

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -181,7 +182,7 @@ class TaskSupervisor:
 
     # ------------------------------------------------------------------ recover
 
-    async def recover(self) -> list[TaskRecord]:
+    async def recover(self) -> Sequence[TaskRecord]:
         """Re-attach to work interrupted by a crash or a reboot.
 
         Anything left RUNNING did not choose to stop; its steps already on disk
@@ -200,10 +201,10 @@ class TaskSupervisor:
     def get(self, task_id: str) -> TaskRecord | None:
         return self.store.get(task_id)
 
-    def list(self, **kw: Any) -> list[TaskRecord]:
+    def list(self, **kw: Any) -> Sequence[TaskRecord]:
         return self.store.list(**kw)
 
-    def steps(self, task_id: str) -> list[StepRecord]:
+    def steps(self, task_id: str) -> Sequence[StepRecord]:
         return self.store.steps_for(task_id)
 
     async def wait(self, task_id: str, *, timeout: float | None = None) -> TaskRecord:

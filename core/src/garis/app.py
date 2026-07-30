@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from .agent import Planner, Verifier
 from .config import Config, load_config
-from .crypto import load_or_create_master_key, subkey
+from .crypto import SecretBox, load_or_create_master_key, subkey
 from .events import EventBus
 from .memory import MemoryService
 from .models import build_router
@@ -107,9 +107,7 @@ def build(
     )
 
 
-def _box(key: bytes):  # type: ignore[no-untyped-def]
-    from .crypto import SecretBox
-
+def _box(key: bytes) -> SecretBox:
     return SecretBox(key)
 
 

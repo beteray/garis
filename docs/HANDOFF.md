@@ -14,7 +14,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (173 testy). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (177 testów). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
@@ -108,12 +108,24 @@ Zapisane, żeby nie wpaść drugi raz:
   asynchroniczne. Serwer był w porządku.
 - **RFC 6455: ramki klienta są maskowane, ramki serwera nie.** Jeden czytnik nie
   obsłuży obu kierunków bez parametru (`read_frame(expect_mask=...)`).
+- **Metoda o nazwie `list` przesłania wbudowany typ w adnotacjach metod tej samej
+  klasy.** `MemoryService`, `Vault`, `TaskStore` i `TaskSupervisor` mają `list()`,
+  więc `-> list[X]` w ich sygnaturach oznaczało metodę, nie listę. W czasie
+  wykonania nic nie pękało (adnotacje są łańcuchami), ale typy u wszystkich
+  wywołujących były fikcją. Zwracamy `Sequence[X]`.
+- **Ref mutowany w `useEffect` nie przerysowuje Reacta.** Fallback kuli bez WebGL
+  nigdy by się nie pokazał — na maszynie bez WebGL użytkownik zobaczyłby pustkę.
+- **`useStore()` bez selektora subskrybuje cały store.** Każda linia postępu
+  przerysowywała całe drzewo.
+- **`async def` w Protocolu to nie to samo co async generator.** Protokół
+  dostawcy deklarował `async def stream(...) -> AsyncIterator[str]`, czyli
+  korutynę zwracającą iterator; implementacje są generatorami. mypy to złapał.
 
 ## Etap 2 — co zrobione, co zostało
 
 Zrobione:
 
-1. ✅ Lokalne API (`core/src/garis/api/`) + `docs/API.md` — 27 testów.
+1. ✅ Lokalne API (`core/src/garis/api/`) + `docs/API.md` — 31 testów.
 2. ✅ Interfejs: kula WebGL ze stanami, panele (rozmowa, zadania, pamięć + sejf,
    urządzenia, subskrypcje, ustawienia, diagnostyka), karty zgód, onboarding
    jako rozmowa. `npm run build` przechodzi, TypeScript strict.
