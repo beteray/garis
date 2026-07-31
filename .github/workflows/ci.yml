@@ -141,6 +141,16 @@ jobs:
           npm ci
           npm run build
 
+      # generate_context! refuses to run when a declared externalBin is missing.
+      # This job only type-checks, so empty files are enough — building a real
+      # Windows engine on a Linux runner is neither possible nor the point.
+      - name: Atrapy sidecarów (tylko do sprawdzenia typów)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          mkdir -p binaries
+          touch binaries/garis-x86_64-unknown-linux-gnu
+          touch binaries/garis-x86_64-pc-windows-msvc.exe
+
       - name: cargo fmt
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --check
@@ -166,6 +176,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: swatinem/rust-cache@v2
@@ -175,6 +190,15 @@ jobs:
       - name: Zależności front-endu
         working-directory: apps/desktop
         run: npm ci
+
+      # The installer is only worth building once it has an engine to carry.
+      # build_engine.py runs the frozen binary before handing it over, so a
+      # bundle that gets this far contains something that at least starts.
+      - name: Silnik jako sidecar
+        run: |
+          python -m pip install -e ".[dev,windows]"
+          python -m pip install pyinstaller
+          python packaging/build_engine.py --clean
 
       # This is the job that matters most: the Rust shell (tray, Mica, autostart,
       # engine lifetime) was written without a Windows machine to compile it on.

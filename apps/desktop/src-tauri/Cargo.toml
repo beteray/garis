@@ -16,6 +16,17 @@ window-vibrancy = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Job objects: the only way to guarantee the engine dies with the shell even when
+# the shell is killed outright and no exit handler ever runs.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    # JOBOBJECT_EXTENDED_LIMIT_INFORMATION lives behind this one, not behind
+    # JobObjects, which is not obvious until the compiler says so.
+    "Win32_System_Threading",
+] }
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 

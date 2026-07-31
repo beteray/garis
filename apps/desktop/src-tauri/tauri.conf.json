@@ -40,11 +40,10 @@
     "targets": ["msi", "nsis"],
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": [],
+    "externalBin": ["binaries/garis"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" }
     }
   },
-  "plugins": {
-    "autostart": {}
-  }
+  "plugins": {}
 }

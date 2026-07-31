@@ -33,7 +33,12 @@ EXIT_ERROR = 3
 
 
 def _out(text: str = "") -> None:
-    print(text)
+    # flush, always: the desktop shell starts `garis serve` and reads the address
+    # and token line by line off a pipe. Python block-buffers a pipe, and `serve`
+    # never exits, so an unflushed handshake is one that never arrives — the
+    # window waits for a line that is sitting in a buffer eight kilobytes from
+    # being sent. The same applies to progress during a long task.
+    print(text, flush=True)
 
 
 def _dim(text: str) -> str:

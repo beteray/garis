@@ -24,7 +24,7 @@ python --version; node --version; rustc --version; cargo --version
 
 ```powershell
 git status
-git log --oneline -1        # oczekiwane: 18e0b18 lub nowszy
+git log --oneline -1
 
 python -m venv .venv
 .\.venv\Scripts\pip install -e ".[dev,windows]"
@@ -34,7 +34,7 @@ cd apps\desktop; npm ci; cd ..\..
 ## 3–5. Testy, jakość, frontend
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q          # oczekiwane: 243 passed
+.\.venv\Scripts\python -m pytest -q          # oczekiwane: 245 passed
 .\.venv\Scripts\python -m ruff check .
 .\.venv\Scripts\python -m mypy
 cd apps\desktop; npm run build; cd ..\..
@@ -63,9 +63,8 @@ cd ..\..\..
 
 ## 8. Produkcyjny build Tauri
 
-To pierwszy moment, w którym cokolwiek się **linkuje**. Profil `release` ma
-`panic = "abort"`, `lto = true` i `strip = true` — żadne z tego nigdy nie
-przeszło linkera.
+Profil `release` (`panic = "abort"`, `lto`, `strip`) linkuje się na Linuksie;
+na Windows to pierwsze linkowanie.
 
 ```powershell
 cd apps\desktop
@@ -79,36 +78,23 @@ Jeśli tu pęknie, to jest błąd linkera lub profilu, nie kodu — patrz
 
 ## 9. Instalator
 
-**Najpierw zbuduj silnik**, inaczej instalator wyjdzie pusty w sensie, który
-opisuje `KNOWN_ISSUES.md` §1 — aplikacja się zainstaluje i nigdy nie połączy.
+**Najpierw zbuduj silnik.** Jeden skrypt: zamraża go PyInstallerem, *uruchamia
+zamrożoną binarkę* zanim cokolwiek skopiuje, i kładzie ją jako sidecar pod
+nazwą, której oczekuje Tauri.
 
 ```powershell
 cd ..\..
 .\.venv\Scripts\pip install pyinstaller
-.\.venv\Scripts\pyinstaller --onefile --name garis --console core\src\garis\cli.py
-# → dist\garis.exe
+.\.venv\Scripts\python packaging\build_engine.py --clean
 ```
 
-Sprawdź, że sam silnik żyje, zanim spakujesz go w cokolwiek:
+Oczekiwane na końcu:
 
-```powershell
-.\dist\garis.exe doctor
+```
+Gotowe: ...\apps\desktop\src-tauri\binaries\garis-x86_64-pc-windows-msvc.exe  (~25 MB)
 ```
 
-Podepnij go jako sidecar:
-
-```powershell
-mkdir apps\desktop\src-tauri\binaries -Force
-copy dist\garis.exe apps\desktop\src-tauri\binaries\garis-x86_64-pc-windows-msvc.exe
-```
-
-W `apps\desktop\src-tauri\tauri.conf.json`, w sekcji `"bundle"`, dopisz:
-
-```jsonc
-"externalBin": ["binaries/garis"]
-```
-
-I zbuduj:
+`externalBin` jest już w `tauri.conf.json` — nic nie dopisujesz. Buduj:
 
 ```powershell
 cd apps\desktop
@@ -130,7 +116,7 @@ Domyślnie ląduje w `C:\Program Files\GARIS\`. Sprawdź, że `garis.exe` leży
 
 ### Gdyby sidecar sprawiał kłopot
 
-Można pominąć cały krok z PyInstallerem i wskazać silnik jawnie:
+Można wskazać silnik jawnie — przydatne przy testowaniu samego lifecycle'u:
 
 ```powershell
 $env:GARIS_ENGINE = "C:\ścieżka\do\repo\.venv\Scripts\garis.exe"
@@ -173,6 +159,9 @@ się skompilowało.**
       (zleć coś dłuższego, zamknij okno, otwórz — postęp ma iść naprzód)
 - [ ] „Zakończ" faktycznie kończy aplikację **i** silnik
       (`Get-Process garis` nic nie zwraca)
+- [ ] **Sierota:** ubij `GARIS.exe` z Menedżera zadań — `Get-Process garis`
+      też ma nic nie zwracać. To sprawdza job object, jedyną rzecz, która
+      działa, gdy żaden handler się nie wykona.
 
 ### Skrót globalny
 
@@ -197,6 +186,9 @@ się skompilowało.**
 
 ### Logi
 
+- [ ] `%LOCALAPPDATA%\ai.garis.desktop\logs\engine.log` istnieje i pokazuje,
+      **którą** binarkę uruchomiono (ma być ta z katalogu instalacji)
+- [ ] W logu widnieje `Token: (pominięty w logu)` — token nigdy nie trafia na dysk
 - [ ] `garis activity --minutes 30` pokazuje wykonane akcje
 - [ ] Brak nieobsłużonych wyjątków i „poisoned mutex"
 - [ ] Brak mignięć okna konsoli przy starcie silnika (`CREATE_NO_WINDOW`)

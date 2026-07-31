@@ -12,7 +12,7 @@ zdążyła już raz kosztować: powłoka miała za sobą pełny code review i ni
 kompilowała się w ogóle.
 
 - `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
-- `docs/KNOWN_ISSUES.md` — co blokuje. Najpierw §1: instalator nie wozi silnika.
+- `docs/KNOWN_ISSUES.md` — co blokuje i co już zamknięte.
 - `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
 
 ## Kto prowadzi
@@ -24,7 +24,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (243 testy). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (245 testy). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
@@ -51,7 +51,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 173 passed
+.venv/bin/python -m pytest -q                 # 245 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -65,11 +65,10 @@ udawać sukces.
 
 ## Czego nie ma
 
-- **Powłoka Tauri nie została skompilowana.** Kod Rusta (tray, Mica, autostart,
-  cykl życia silnika) jest napisany, ale ta sesja nie miała ani Windows, ani
-  webkit2gtk. `npm run tauri build` to pierwsza rzecz do zrobienia na Windows —
-  spodziewaj się drobnych poprawek w API Tauri 2, nie w architekturze.
-- Ikony aplikacji (`src-tauri/icons/`) są puste — trzeba wygenerować.
+- **Nic nie było uruchomione na Windows.** Powłoka kompiluje się pod Linux i pod
+  `x86_64-pc-windows-msvc`, a pełna ścieżka instalator → start → runtime została
+  przejechana na paczce `.deb`. Windows-owe zostaje to, co naprawdę zależy od
+  Windows: Mica, tray, `Ctrl+Alt+G`, autostart, `.msi`.
 - audio i słowo aktywacyjne (etap 3), mobile (etap 7)
 - ścieżki natywne Windows **nie były uruchomione na Windows** — powstały na
   Linuksie, z deklaracją platformy i `Unsupported` poza Windows. To pierwsza
@@ -146,6 +145,39 @@ Zapisane, żeby nie wpaść drugi raz:
   clippy` (patrz „Praca" niżej) — a w CI robi to zadanie `shell-check`, zanim
   w ogóle ruszy wolny build na Windows.
 
+- **PyInstaller ma sens tylko wtedy, gdy zbudowaną binarkę się uruchomi.**
+  `packaging/build_engine.py` odpala `garis doctor` na świeżo zamrożonym pliku,
+  zanim skopiuje go do sidecarów. Binarka, która buduje się i umiera na
+  brakującym imporcie, jest gorsza niż nieudany build — bundle zapakuje ją bez
+  mrugnięcia.
+- **`print()` do potoku nie dociera, dopóki proces nie skończy.** Powłoka czyta
+  `API:` i `Token:` linia po linii z potoku, a `serve` nie kończy się nigdy —
+  więc niezflushowany handshake to handshake, który nie przychodzi. Wyglądało
+  na sprawne wyłącznie dlatego, że maszyna deweloperska miała
+  `PYTHONUNBUFFERED=1`. `tests/test_engine_handshake.py` **usuwa tę zmienną**,
+  bo z nią zepsuty silnik przechodzi.
+- **Nie zamykaj potoku po odczytaniu handshake'u.** Wyjście z pętli czytającej
+  zamyka `stdout` dziecka; następny zapis silnika idzie w nieistniejący potok.
+  Trzeba drenować dalej — i przy okazji jest gdzie zapisywać log.
+- **Token nie może trafić do logu.** Linia `Token: …` jest redagowana przy
+  zapisie do `engine.log`; poświadczenie w pliku tekstowym to poświadczenie
+  wyciekłe.
+- **`plugins.autostart: {}` w `tauri.conf.json` wywala aplikację przy starcie.**
+  Wtyczka oczekuje `unit`, nie mapy — `invalid type: map, expected unit`. Kod
+  kompilował się, linkował, pakował, instalował i ginął natychmiast po
+  uruchomieniu. Znalazło to dopiero prawdziwe odpalenie.
+- **`@tauri-apps/cli` musi być w `devDependencies`.** Bez tego `npm run tauri
+  build` kończy się na „could not determine executable to run" — i tak samo
+  padłoby CI.
+- **`externalBin` łamie `cargo check`, dopóki plik nie istnieje.** Do samego
+  sprawdzania typów wystarczą puste atrapy dla obu tripletów (robi to CI).
+- **`RunEvent::Exit` nie wystarcza na sieroty.** Przy `kill -9`, Menedżerze
+  zadań czy crashu żaden handler się nie wykona. Na Windows domyka to job
+  object z `KILL_ON_JOB_CLOSE`; na Linuksie sierota zostaje — sprawdzone.
+- **`windows-sys` 0.59 ma typy job objectów, ale nie funkcje.** Trzy wywołania
+  (`CreateJobObjectW`, `SetInformationJobObject`, `AssignProcessToJobObject`)
+  deklarujemy sami, zamiast dokładać drugi, dużo większy crate.
+
 ## Etap 2 — co zrobione, co zostało
 
 Zrobione:
@@ -170,7 +202,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 243 testy, musi być zielone
+.venv/bin/python -m pytest -q            # 245 testy, musi być zielone
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

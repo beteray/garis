@@ -37,3 +37,8 @@ Thumbs.db
 !.env.example
 *.pem
 *.key
+
+# Engine packaging (generated — build with packaging/build_engine.py)
+packaging/build/
+packaging/dist/
+apps/desktop/src-tauri/binaries/
