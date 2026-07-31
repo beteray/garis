@@ -127,6 +127,14 @@ Zapisane, żeby nie wpaść drugi raz:
   „usuń znaki składające, zostaw a-z" zamieniało je w spację: `wołam` → `wo am`.
   Dotyczyło i wyszukiwania w pamięci, i słowa aktywacyjnego. Jedna implementacja
   w `text.py`, jeden test.
+- **Powłokę w Ruście da się sprawdzić na Linuksie i trzeba to robić.** Przez
+  długi czas nikt jej nie skompilował ani razu — i siedział w niej zwykły błąd
+  kompilacji: `app.global_shortcut()` bez `use GlobalShortcutExt`. Tauri jest
+  Windows-first, ale to nie jest kod tylko-dla-Windows; brakujący import,
+  przeniesiona wartość czy zmieniona nazwa w pluginie psują się tak samo
+  wszędzie. Wystarczy zainstalować biblioteki systemowe i uruchomić `cargo
+  clippy` (patrz „Praca" niżej) — a w CI robi to zadanie `shell-check`, zanim
+  w ogóle ruszy wolny build na Windows.
 
 ## Etap 2 — co zrobione, co zostało
 
@@ -148,6 +156,26 @@ Zostało:
 
 Wymagania wizualne są nienegocjowalne i opisane w `docs/UI.md`: Liquid Glass,
 framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
+
+## Praca
+
+```bash
+.venv/bin/python -m pytest -q            # 243 testy, musi być zielone
+.venv/bin/ruff check .
+.venv/bin/python -m mypy
+cd apps/desktop && npm run build         # TypeScript strict + Vite
+```
+
+Powłoka w Ruście — sprawdzalna na Linuksie, raz zainstaluj biblioteki:
+
+```bash
+sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+cd apps/desktop && npm run build         # generate_context! chce gotowego dist/
+cd src-tauri && cargo clippy --all-targets -- -D warnings
+```
+
+Pełnego `.msi` nie zbudujesz poza Windows, ale błędy kompilacji złapiesz tutaj.
 
 ## Konwencje
 

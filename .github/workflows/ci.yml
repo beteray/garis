@@ -99,9 +99,51 @@ jobs:
       - name: Build (TypeScript strict + Vite)
         run: npm run build
 
+  # The Rust shell is Windows-first but it is not Windows-only code, and most of
+  # what breaks in it (a missing trait import, a moved value, a renamed plugin
+  # API) breaks identically on Linux. Checking here costs three minutes and
+  # catches those before the slow Windows job is even worth starting.
+  shell-check:
+    name: Powłoka — sprawdzenie typów
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Biblioteki systemowe GTK/WebKit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      # generate_context! reads tauri.conf.json and wants the built front-end to
+      # exist, so the interface has to be built before the shell can be checked.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Interfejs (potrzebny do generate_context!)
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+
+      - name: cargo clippy
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
   shell:
     name: Powłoka natywna (Windows)
     runs-on: windows-latest
+    needs: shell-check
     steps:
       - uses: actions/checkout@v4
 

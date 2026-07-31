@@ -217,7 +217,9 @@ fn main() {
             // --- global shortcut -------------------------------------------
             #[cfg(desktop)]
             {
-                use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+                };
 
                 let summon = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyG);
                 let handle_for_shortcut = handle.clone();
