@@ -117,7 +117,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
+          # cargo check does not link, so the Windows-only code (Mica,
+          # CREATE_NO_WINDOW, the windows subsystem attribute) can be compiled
+          # here. Without this the #[cfg(windows)] blocks are checked by nothing
+          # at all until someone runs a Windows build.
+          targets: x86_64-pc-windows-msvc
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -136,9 +141,17 @@ jobs:
           npm ci
           npm run build
 
+      - name: cargo fmt
+        working-directory: apps/desktop/src-tauri
+        run: cargo fmt --check
+
       - name: cargo clippy
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo clippy (kod tylko dla Windows)
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 
   shell:
     name: Powłoka natywna (Windows)

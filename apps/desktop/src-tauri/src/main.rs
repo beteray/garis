@@ -23,6 +23,12 @@ use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 struct EngineInfo {
     base: String,
     token: String,
+    /// Why there is no engine, in a sentence the window can show.
+    ///
+    /// A release build sets `windows_subsystem = "windows"`, so it has no console
+    /// to print to: without this the user gets a window that never connects and
+    /// no way to find out why.
+    error: String,
 }
 
 #[derive(Default)]
@@ -75,7 +81,11 @@ fn start_engine(app: &AppHandle) {
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            eprintln!("nie udało się uruchomić silnika GARIS: {error}");
+            engine.info.lock().expect("engine info poisoned").error = format!(
+                "Nie udało się uruchomić silnika GARIS ({}). Sprawdź, czy plik `{}` istnieje.",
+                error,
+                engine_binary()
+            );
             return;
         }
     };
@@ -93,8 +103,11 @@ fn start_engine(app: &AppHandle) {
                 }
                 if !base.is_empty() && !token.is_empty() {
                     let engine = handle.state::<Engine>();
-                    *engine.info.lock().expect("engine info poisoned") =
-                        EngineInfo { base: base.clone(), token: token.clone() };
+                    *engine.info.lock().expect("engine info poisoned") = EngineInfo {
+                        base: base.clone(),
+                        token: token.clone(),
+                        error: String::new(),
+                    };
                     // The UI polls /api/health until this lands, so nothing else
                     // needs to be signalled here.
                     break;
@@ -120,13 +133,32 @@ fn attach_to_running() -> Option<EngineInfo> {
         std::time::Duration::from_millis(400),
     );
     probe.ok()?;
-    Some(EngineInfo { base: "http://127.0.0.1:8756".into(), token })
+    Some(EngineInfo {
+        base: "http://127.0.0.1:8756".into(),
+        token,
+        error: String::new(),
+    })
 }
 
 fn engine_binary() -> String {
-    // Packaged builds ship the engine next to the executable; during development
-    // the `garis` on PATH is the one being worked on.
-    std::env::var("GARIS_ENGINE").unwrap_or_else(|_| "garis".into())
+    if let Ok(explicit) = std::env::var("GARIS_ENGINE") {
+        return explicit;
+    }
+
+    // A packaged build ships the engine next to the executable, so look there
+    // before falling back to PATH. An installed GARIS must not depend on what
+    // happens to be on the user's PATH — and on a developer machine it must not
+    // silently pick up a half-finished checkout either.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(directory) = exe.parent() {
+            let beside = directory.join(if cfg!(windows) { "garis.exe" } else { "garis" });
+            if beside.is_file() {
+                return beside.to_string_lossy().into_owned();
+            }
+        }
+    }
+
+    "garis".into()
 }
 
 fn show(app: &AppHandle) {
@@ -199,12 +231,7 @@ fn main() {
                 #[cfg(target_os = "macos")]
                 {
                     use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
-                    let _ = apply_vibrancy(
-                        &window,
-                        NSVisualEffectMaterial::HudWindow,
-                        None,
-                        None,
-                    );
+                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None);
                 }
 
                 // Autostart hands us --minimised so login does not throw a window
