@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Co wolno oknu GARIS-a. Nic ponad to, czego naprawdę używa.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

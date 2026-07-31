@@ -10,24 +10,73 @@
  */
 
 :root {
-  /* --- glass ---------------------------------------------------------- */
-  --glass-bg: rgba(255, 255, 255, 0.06);
-  --glass-bg-strong: rgba(255, 255, 255, 0.10);
-  --glass-bg-hover: rgba(255, 255, 255, 0.14);
-  --glass-stroke: rgba(255, 255, 255, 0.12);
-  --glass-stroke-strong: rgba(255, 255, 255, 0.22);
-  --glass-highlight: rgba(255, 255, 255, 0.18);
-  --glass-blur: 40px;
-  --glass-saturate: 180%;
+  /* --- glass -----------------------------------------------------------
+   * Three tiers, not one. A single alpha used everywhere is what turns an
+   * interface into a stack of identical grey tiles: nothing reads as being in
+   * front of anything else. Each tier gets its own fill, blur and shadow, and
+   * they are meant to be used in that order — page, panel, card, control.
+   *
+   * --glass-tint carries a little of the accent hue. Pure white at low alpha
+   * over a dark backdrop is literally grey; a trace of colour is the difference
+   * between glass and dishwater.
+   */
+  --glass-tint: 205 70% 70%;
+
+  --glass-fill: linear-gradient(
+    150deg,
+    hsl(var(--glass-tint) / 0.10),
+    hsl(var(--glass-tint) / 0.030) 42%,
+    hsl(var(--glass-tint) / 0.012) 68%,
+    hsl(var(--glass-tint) / 0.045)
+  );
+  --glass-fill-raised: linear-gradient(
+    150deg,
+    hsl(var(--glass-tint) / 0.20),
+    hsl(var(--glass-tint) / 0.08) 46%,
+    hsl(var(--glass-tint) / 0.04) 70%,
+    hsl(var(--glass-tint) / 0.10)
+  );
+  --glass-fill-sunken: linear-gradient(
+    150deg,
+    rgba(0, 0, 0, 0.16),
+    rgba(0, 0, 0, 0.08)
+  );
+
+  --glass-bg: hsl(var(--glass-tint) / 0.07);
+  --glass-bg-strong: hsl(var(--glass-tint) / 0.13);
+  --glass-bg-hover: hsl(var(--glass-tint) / 0.18);
+  --glass-stroke: rgba(255, 255, 255, 0.10);
+  --glass-stroke-strong: rgba(255, 255, 255, 0.20);
+  --glass-highlight: rgba(255, 255, 255, 0.34);
+
+  --glass-blur: 32px;
+  --glass-blur-card: 18px;
+  --glass-saturate: 165%;
+
+  /* Scales every glass effect at once, so "intensywność szkła" is one knob
+   * rather than a hunt through the stylesheet. 0 = plain surfaces. */
+  --glass-strength: 1;
 
   /* --- shape ---------------------------------------------------------- */
   --radius-panel: 24px;
   --radius-card: 18px;
   --radius-control: 13px;
   --radius-pill: 999px;
-  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.28);
-  --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.18);
-  --shadow-lifted: 0 14px 44px rgba(0, 0, 0, 0.34);
+  /* Two shadows per surface: a tight contact shadow that seats the panel, and a
+   * wide soft one that gives it air. One shadow alone reads as a drop shadow;
+   * two read as depth. The inset line is the pane's own lit top edge. */
+  --shadow-panel:
+    0 1px 1px rgba(0, 0, 0, 0.18),
+    0 10px 34px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --shadow-card:
+    0 1px 1px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-lifted:
+    0 2px 4px rgba(0, 0, 0, 0.20),
+    0 18px 50px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 
   /* --- ink ------------------------------------------------------------ */
   --ink: rgba(255, 255, 255, 0.94);
@@ -42,6 +91,8 @@
   --state-speaking: 210 95% 66%;
   --state-error: 8 88% 62%;         /* warm, never alarming red */
   --state-ok: 148 70% 52%;
+  --state-busy: 210 90% 66%;        /* still on its way — not a problem yet */
+  --state-warn: 38 92% 62%;         /* lost the socket, coming back */
 
   --accent: hsl(var(--state-working));
   --accent-soft: hsl(var(--state-working) / 0.16);
@@ -70,15 +121,37 @@
 /* Light theme is first-class, not an afterthought: glass over a bright desktop
  * needs darker ink and a *lower* white alpha, or it turns into milk. */
 :root[data-theme="light"] {
-  --glass-bg: rgba(255, 255, 255, 0.52);
-  --glass-bg-strong: rgba(255, 255, 255, 0.68);
-  --glass-bg-hover: rgba(255, 255, 255, 0.78);
-  --glass-stroke: rgba(0, 0, 0, 0.08);
-  --glass-stroke-strong: rgba(0, 0, 0, 0.14);
-  --glass-highlight: rgba(255, 255, 255, 0.9);
-  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.08);
-  --shadow-lifted: 0 14px 44px rgba(0, 0, 0, 0.16);
+  --glass-fill: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.78),
+    rgba(255, 255, 255, 0.58) 45%,
+    rgba(255, 255, 255, 0.50) 70%,
+    rgba(255, 255, 255, 0.66)
+  );
+  --glass-fill-raised: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.90),
+    rgba(255, 255, 255, 0.74)
+  );
+  --glass-fill-sunken: linear-gradient(150deg, rgba(12, 16, 22, 0.05), rgba(12, 16, 22, 0.02));
+  --glass-bg: rgba(255, 255, 255, 0.58);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-bg-hover: rgba(255, 255, 255, 0.84);
+  --glass-stroke: rgba(12, 16, 22, 0.07);
+  --glass-stroke-strong: rgba(12, 16, 22, 0.13);
+  --glass-highlight: rgba(255, 255, 255, 0.95);
+  --shadow-panel:
+    0 1px 1px rgba(16, 24, 40, 0.05),
+    0 10px 30px rgba(16, 24, 40, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.80);
+  --shadow-card:
+    0 1px 1px rgba(16, 24, 40, 0.04),
+    0 4px 14px rgba(16, 24, 40, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.70);
+  --shadow-lifted:
+    0 2px 4px rgba(16, 24, 40, 0.08),
+    0 18px 44px rgba(16, 24, 40, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.90);
   --ink: rgba(12, 16, 22, 0.92);
   --ink-soft: rgba(12, 16, 22, 0.60);
   --ink-faint: rgba(12, 16, 22, 0.38);
@@ -86,15 +159,37 @@
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --glass-bg: rgba(255, 255, 255, 0.52);
-    --glass-bg-strong: rgba(255, 255, 255, 0.68);
-    --glass-bg-hover: rgba(255, 255, 255, 0.78);
-    --glass-stroke: rgba(0, 0, 0, 0.08);
-    --glass-stroke-strong: rgba(0, 0, 0, 0.14);
-    --glass-highlight: rgba(255, 255, 255, 0.9);
-    --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.12);
-    --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.08);
-    --shadow-lifted: 0 14px 44px rgba(0, 0, 0, 0.16);
+    --glass-fill: linear-gradient(
+      150deg,
+      rgba(255, 255, 255, 0.78),
+      rgba(255, 255, 255, 0.58) 45%,
+      rgba(255, 255, 255, 0.50) 70%,
+      rgba(255, 255, 255, 0.66)
+    );
+    --glass-fill-raised: linear-gradient(
+      150deg,
+      rgba(255, 255, 255, 0.90),
+      rgba(255, 255, 255, 0.74)
+    );
+    --glass-fill-sunken: linear-gradient(150deg, rgba(12, 16, 22, 0.05), rgba(12, 16, 22, 0.02));
+    --glass-bg: rgba(255, 255, 255, 0.58);
+    --glass-bg-strong: rgba(255, 255, 255, 0.72);
+    --glass-bg-hover: rgba(255, 255, 255, 0.84);
+    --glass-stroke: rgba(12, 16, 22, 0.07);
+    --glass-stroke-strong: rgba(12, 16, 22, 0.13);
+    --glass-highlight: rgba(255, 255, 255, 0.95);
+    --shadow-panel:
+      0 1px 1px rgba(16, 24, 40, 0.05),
+      0 10px 30px rgba(16, 24, 40, 0.10),
+      inset 0 1px 0 rgba(255, 255, 255, 0.80);
+    --shadow-card:
+      0 1px 1px rgba(16, 24, 40, 0.04),
+      0 4px 14px rgba(16, 24, 40, 0.07),
+      inset 0 1px 0 rgba(255, 255, 255, 0.70);
+    --shadow-lifted:
+      0 2px 4px rgba(16, 24, 40, 0.08),
+      0 18px 44px rgba(16, 24, 40, 0.14),
+      inset 0 1px 0 rgba(255, 255, 255, 0.90);
     --ink: rgba(12, 16, 22, 0.92);
     --ink-soft: rgba(12, 16, 22, 0.60);
     --ink-faint: rgba(12, 16, 22, 0.38);

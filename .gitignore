@@ -42,3 +42,7 @@ Thumbs.db
 packaging/build/
 packaging/dist/
 apps/desktop/src-tauri/binaries/
+
+# UI probe screenshots
+/tmp/shots/
+apps/desktop/tools/shots/

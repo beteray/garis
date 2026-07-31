@@ -34,7 +34,7 @@ cd apps\desktop; npm ci; cd ..\..
 ## 3–5. Testy, jakość, frontend
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q          # oczekiwane: 245 passed
+.\.venv\Scripts\python -m pytest -q          # oczekiwane: 249 passed
 .\.venv\Scripts\python -m ruff check .
 .\.venv\Scripts\python -m mypy
 cd apps\desktop; npm run build; cd ..\..

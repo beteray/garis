@@ -40,6 +40,46 @@ MAX_BODY = 1 << 20
 MAX_HEADER_LINES = 100
 TOKEN_SECRET_NAME = "api_token"
 
+# The desktop window is not same-origin with the engine and never can be.
+#
+# A packaged Tauri app serves its own pages from a custom scheme — tauri://localhost
+# on macOS and Linux, http://tauri.localhost on Windows — while the engine listens
+# on 127.0.0.1. Every fetch the window makes is therefore cross-origin, and without
+# these headers the browser engine refuses all of them before the request is even
+# authenticated. That failure looks exactly like a broken app: the window opens,
+# says it is connecting, and nothing it offers ever works.
+#
+# Listed rather than mirrored with "*": the API is loopback-only and carries a
+# bearer token, and a wildcard would let any page the user happens to have open
+# talk to their agent.
+ALLOWED_ORIGINS = frozenset(
+    {
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    }
+)
+# Vite during development, on whatever port it picked.
+LOCAL_ORIGIN = re.compile(r"^http://(?:localhost|127\.0\.0\.1)(?::\d+)?$")
+
+
+def _origin_allowed(origin: str) -> bool:
+    return bool(origin) and (origin in ALLOWED_ORIGINS or bool(LOCAL_ORIGIN.fullmatch(origin)))
+
+
+def _cors_headers(origin: str) -> dict[str, str]:
+    """Headers that let the window talk to the engine, and nobody else."""
+    if not _origin_allowed(origin):
+        return {}
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "600",
+        # Caches must not hand one origin's response to another.
+        "Vary": "Origin",
+    }
+
 
 @dataclass(slots=True)
 class Request:
@@ -144,7 +184,20 @@ class ApiServer:
                 await self._upgrade(request, reader, writer)
                 return
 
+            origin = request.headers.get("origin", "")
+
+            # The preflight has to be answered before the real request is ever
+            # sent, and it carries no credentials — so it is handled ahead of
+            # routing and authentication rather than inside them.
+            if request.method == "OPTIONS":
+                headers = _cors_headers(origin)
+                # 200 rather than 204: _write_reply always sends a body, and a
+                # 204 that carries one is malformed.
+                await self._write_reply(writer, Reply(200 if headers else 403, {}, headers))
+                return
+
             reply = await self._dispatch(request)
+            reply.headers.update(_cors_headers(origin))
             await self._write_reply(writer, reply)
         except (ConnectionError, asyncio.IncompleteReadError):
             pass

@@ -29,30 +29,93 @@ body {
   user-select: none;
 }
 
+/* Glass needs something worth blurring.
+ *
+ * This is the single biggest reason the interface read as grey tiles: a flat
+ * dark fill behind a translucent panel blurs to exactly one colour, so every
+ * surface came out the same lifeless grey no matter how the panel was styled.
+ * Slow, wide, coloured light behind everything is what gives the blur material
+ * to work with — and it is why the panels differ from each other at all. */
+#root {
+  position: relative;
+  isolation: isolate;
+  /* The aurora layer is deliberately larger than the window so its edges never
+   * enter frame while it drifts. Without this clip that overhang becomes page
+   * overflow and the whole app gains scrollbars. */
+  overflow: hidden;
+}
+
 #root:not([data-vibrancy="true"]) {
-  background:
-    radial-gradient(120% 90% at 12% 0%, hsl(230 40% 22% / 0.92), transparent 60%),
-    radial-gradient(100% 80% at 100% 100%, hsl(268 44% 24% / 0.88), transparent 62%),
-    linear-gradient(160deg, hsl(226 32% 10%), hsl(232 34% 7%));
+  background: linear-gradient(160deg, hsl(228 34% 9%), hsl(234 36% 6%));
 }
 
 :root[data-theme="light"] #root:not([data-vibrancy="true"]) {
+  background: linear-gradient(160deg, hsl(212 44% 97%), hsl(226 32% 93%));
+}
+
+#root::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: -2;
+  pointer-events: none;
   background:
-    radial-gradient(120% 90% at 12% 0%, hsl(210 100% 92% / 0.9), transparent 60%),
-    radial-gradient(100% 80% at 100% 100%, hsl(268 80% 92% / 0.9), transparent 62%),
-    linear-gradient(160deg, hsl(210 40% 97%), hsl(228 30% 92%));
+    radial-gradient(38% 44% at 18% 12%, hsl(202 92% 56% / 0.34), transparent 68%),
+    radial-gradient(34% 40% at 82% 22%, hsl(272 86% 62% / 0.30), transparent 66%),
+    radial-gradient(44% 46% at 68% 88%, hsl(178 84% 50% / 0.22), transparent 70%),
+    radial-gradient(30% 34% at 8% 82%, hsl(322 78% 60% / 0.20), transparent 68%);
+  filter: blur(24px);
+  animation: aurora var(--dur-aurora, 38s) ease-in-out infinite alternate;
+}
+
+:root[data-theme="light"] #root::before {
+  background:
+    radial-gradient(38% 44% at 18% 12%, hsl(202 96% 68% / 0.40), transparent 68%),
+    radial-gradient(34% 40% at 82% 22%, hsl(272 90% 76% / 0.34), transparent 66%),
+    radial-gradient(44% 46% at 68% 88%, hsl(178 88% 62% / 0.30), transparent 70%),
+    radial-gradient(30% 34% at 8% 82%, hsl(322 84% 74% / 0.24), transparent 68%);
+}
+
+@keyframes aurora {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(2.5%, -2%, 0) scale(1.08); }
+  100% { transform: translate3d(-2%, 2.5%, 0) scale(1.04); }
+}
+
+/* Fine grain over the whole page. Large soft gradients band badly on 8-bit
+ * panels; a little noise breaks the steps up and is the cheapest thing that
+ * separates "premium" from "flat". */
+#root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* An idle window should not be painting an aurora at 60 fps for nobody. The
+ * shell sets data-quiet when the window is hidden or the app is minimised. */
+:root[data-quiet="true"] #root::before {
+  animation-play-state: paused;
 }
 
 /* --- glass ------------------------------------------------------------- */
 
 .glass {
   position: relative;
-  background: var(--glass-bg);
+  /* A gradient, not a fill. A flat alpha is what makes a panel read as a tile;
+   * the pane has to be brighter where the light hits it. */
+  background: var(--glass-fill);
   border: 1px solid var(--glass-stroke);
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(calc(var(--glass-blur) * var(--glass-strength)))
+    saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * var(--glass-strength)))
+    saturate(var(--glass-saturate));
   transition:
     background var(--dur-base) var(--ease-glass),
     border-color var(--dur-base) var(--ease-glass),
@@ -67,12 +130,17 @@ body {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
+  /* Brightest at the top-left corner the light comes from, fading out well
+   * before the middle, with a faint return along the bottom edge where the
+   * pane picks up bounce. A uniform border is what a rectangle has; this is
+   * what an edge has. */
   background: linear-gradient(
-    160deg,
+    150deg,
     var(--glass-highlight),
-    transparent 38%,
-    transparent 62%,
-    rgba(255, 255, 255, 0.05)
+    rgba(255, 255, 255, 0.06) 26%,
+    transparent 46%,
+    transparent 68%,
+    rgba(255, 255, 255, 0.10)
   );
   mask:
     linear-gradient(#000 0 0) content-box,
@@ -107,8 +175,38 @@ body {
 }
 
 .glass--raised {
-  background: var(--glass-bg-strong);
+  background: var(--glass-fill-raised);
   box-shadow: var(--shadow-lifted);
+}
+
+/* A card inside a panel. Less blur, less fill and a tighter shadow — a card that
+ * blurs as hard as the panel it sits on looks like a hole cut in it, not like
+ * something resting on top. */
+.glass--card {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(calc(var(--glass-blur-card) * var(--glass-strength)))
+    saturate(130%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-card) * var(--glass-strength)))
+    saturate(130%);
+}
+
+/* Inputs and wells read as cut into the surface, not laid on it. */
+.glass--sunken {
+  background: var(--glass-fill-sunken);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+/* Effects cost GPU. When the user asks for less, or the window is not being
+ * looked at, they come off — the layout never moves. */
+:root[data-glass="off"] .glass,
+:root[data-glass="off"] .glass--card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--glass-bg-strong);
 }
 
 /* --- controls ---------------------------------------------------------- */

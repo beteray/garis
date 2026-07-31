@@ -1,6 +1,26 @@
 # Znane problemy
 
-Stan na commit z pakowaniem silnika. Kolejność: najpierw to, co blokuje.
+Kolejność: najpierw to, co blokuje.
+
+---
+
+## 0. Test na Windows 11 (pierwszy prawdziwy) — przyczyna znaleziona i naprawiona
+
+Zgłoszone objawy: martwe przyciski, brak zapisu klucza Gemini, wieczne
+„Łączę się…", brak możliwości wykonania zadania.
+
+**Jedna przyczyna dla wszystkich czterech: brak CORS w API silnika.** Okno Tauri
+ma origin `http://tauri.localhost`, silnik stoi na `127.0.0.1` — przeglądarka
+blokowała każde żądanie przed uwierzytelnieniem. Przyciski „nie reagowały", bo
+każdy przycisk to wywołanie API.
+
+Naprawione i zweryfikowane w prawdziwej przeglądarce
+(`apps/desktop/tools/ui-probe.mjs`): status pokazuje `v0.1.0`, cała nawigacja
+klika, klucz Gemini zapisuje się do sejfu i przeżywa przeładowanie, brak
+przepełnienia przy czterech rozmiarach okna.
+
+**Nadal do sprawdzenia na Windows**, bo sonda używa Chromium, nie WebView2:
+`invoke` do powłoki, tray, Mica, `Ctrl+Alt+G`, autostart, skalowanie 125/150/175%.
 
 ---
 
@@ -71,10 +91,29 @@ indziej.
 - **Port 8756 na sztywno.** Zajęty port to brak połączenia bez dobrego
   komunikatu.
 
-## 5. Drobne
+## 5. Czego w tej rundzie NIE zrobiono
 
-- Interfejs nie pokazuje jeszcze `EngineInfo.error` — powłoka je wypełnia, UI
-  ignoruje. Log silnika (`engine.log`) już jest i zawiera powód.
+Uczciwie, żeby nie wyglądało na skończone:
+
+- **Priorytet 5 — hierarchia ekranów.** Ustawienia to nadal jedna długa strona,
+  nie dwanaście kategorii. Sekcje główne zostały jak były.
+- **Priorytet 6 — personalizacja.** Motyw, akcent, skala UI, gęstość, jakość
+  kuli, dźwięki, tryb cichy i reszta listy **nie istnieją**. Świadomie nie
+  dodałem martwych przełączników — zgodnie z Twoim warunkiem.
+  Fundament pod to jest: `--glass-strength`, `data-glass="off"`,
+  `data-quiet="true"` i `data-theme` działają, brakuje ekranu, który je ustawia.
+- **Skalowanie Windows 125/150/175%** — nie do sprawdzenia w Chromium na
+  Linuksie.
+- **Zadanie end-to-end z prawdziwym modelem** — klucz zapisuje się, ale nie
+  zlecałem zadania na żywym dostawcy.
+
+## 6. Drobne
+
+- `EngineInfo.error` trafia już do okna: zamiast wiecznego „Łączę się…" jest
+  siedem rozróżnialnych stanów (uruchamiam / handshake / połączono / silnik nie
+  wystartował / token odrzucony / brak odpowiedzi / ponawiam), przycisk
+  „Uruchom silnik ponownie" i „Skopiuj diagnostykę". Ścieżka przez Tauri
+  (`restart_engine`) **nie była uruchomiona** — w przeglądarce nie ma `invoke`.
 - `window-vibrancy` przypięte na `0.5` (dostępne `0.8`). Nie ruszam bez
   możliwości obejrzenia efektu.
 - Głos ma warstwę decyzyjną bez audio — `docs/ROADMAP.md`, etap 3.

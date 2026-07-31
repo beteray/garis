@@ -10,7 +10,8 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { GarisApi, discover } from "./lib/api";
+import type { Link } from "./lib/api";
+import { GarisApi, classify, discover, inTauri, restartEngine } from "./lib/api";
 import {
   EASE,
   base,
@@ -61,27 +62,62 @@ export default function App() {
 
   const [ready, setReady] = useState(false);
   const [onboarding, setOnboarding] = useState(false);
+  const [link, setLink] = useState<Link>({ state: "starting" });
+  const [attempt, setAttempt] = useState(0);
   const reduced = prefersReducedMotion();
 
   useEffect(() => {
     let disconnect: (() => void) | undefined;
+    let cancelled = false;
 
     void (async () => {
-      const { base: url, token } = await discover();
-      const api = new GarisApi(url, token);
+      setLink({ state: "starting" });
+      const found = await discover();
+      if (cancelled) return;
+
+      // The shell knows it failed to launch anything. Say so, rather than
+      // spending thirty seconds pretending to connect to nothing.
+      if (found.fromShell && !found.token) {
+        setLink({
+          state: "engine-failed",
+          detail: found.error || "Powłoka nie zdołała uruchomić silnika.",
+        });
+        setReady(true);
+        return;
+      }
+
+      setLink({ state: "handshake" });
+      const api = new GarisApi(found.base, found.token);
       setApi(api);
+
       try {
         await api.health();
         await refresh();
-        setReady(true);
-      } catch {
-        setReady(true); // show the disconnected state rather than a blank window
+        if (cancelled) return;
+        setLink({ state: "connected" });
+      } catch (cause) {
+        if (cancelled) return;
+        setLink(classify(cause));
       }
+      setReady(true);
       disconnect = api.connect(handleEvent, setConnection);
     })();
 
-    return () => disconnect?.();
-  }, [setApi, handleEvent, setConnection, refresh]);
+    return () => {
+      cancelled = true;
+      disconnect?.();
+    };
+  }, [setApi, handleEvent, setConnection, refresh, attempt]);
+
+  // The socket is the live truth once we are up: losing it is "retrying", not
+  // "connected", and getting it back clears whatever error came before.
+  useEffect(() => {
+    setLink((current) => {
+      if (connection === "open") return { state: "connected" };
+      if (current.state === "connected") return { state: "retrying", attempt: 1 };
+      return current;
+    });
+  }, [connection]);
 
   useEffect(() => {
     if (engine && !engine.identity.onboarded) setOnboarding(true);
@@ -190,28 +226,7 @@ export default function App() {
           <span>◔</span> Diagnostyka
         </button>
 
-        <div
-          className="tiny faint"
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 12px" }}
-        >
-          <motion.span
-            animate={{
-              opacity: connection === "open" ? [0.6, 1, 0.6] : 0.5,
-              scale: connection === "open" ? [1, 1.25, 1] : 1,
-            }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background:
-                connection === "open"
-                  ? "hsl(var(--state-ok))"
-                  : "hsl(var(--state-error))",
-            }}
-          />
-          {connection === "open" ? `v${engine?.version ?? "?"}` : "łączę się…"}
-        </div>
+        <LinkPill link={link} version={engine?.version} onRetry={() => setAttempt((n) => n + 1)} />
       </Glass>
 
       {/* --------------------------------------------------------------- stage */}
@@ -231,6 +246,8 @@ export default function App() {
             >
               {!ready ? (
                 <div className="skeleton" style={{ height: "100%" }} />
+              ) : link.state !== "connected" && link.state !== "retrying" ? (
+                <LinkFailure link={link} onRetry={() => setAttempt((n) => n + 1)} />
               ) : view === "home" ? (
                 <HomeView />
               ) : view === "conversation" ? (
@@ -260,6 +277,136 @@ export default function App() {
       <AnimatePresence>
         {onboarding && <Onboarding onFinish={() => setOnboarding(false)} />}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** One line, one dot, one truth about whether the agent is reachable. */
+const LINK_WORDS: Record<Link["state"], { word: string; tone: string }> = {
+  starting: { word: "uruchamiam silnik…", tone: "var(--state-busy)" },
+  handshake: { word: "przedstawiamy się…", tone: "var(--state-busy)" },
+  connected: { word: "", tone: "var(--state-ok)" },
+  "engine-failed": { word: "silnik nie wystartował", tone: "var(--state-error)" },
+  "bad-token": { word: "token odrzucony", tone: "var(--state-error)" },
+  "no-response": { word: "silnik nie odpowiada", tone: "var(--state-error)" },
+  retrying: { word: "ponawiam…", tone: "var(--state-warn)" },
+};
+
+function LinkPill({
+  link,
+  version,
+  onRetry,
+}: {
+  link: Link;
+  version?: string;
+  onRetry: () => void;
+}) {
+  const { word, tone } = LINK_WORDS[link.state];
+  const live = link.state === "connected";
+  return (
+    <button
+      onClick={onRetry}
+      disabled={live}
+      className="btn btn--quiet no-drag tiny"
+      title={live ? "Połączono" : "Kliknij, żeby spróbować ponownie"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "6px 12px",
+        justifyContent: "flex-start",
+        opacity: live ? 0.7 : 1,
+        cursor: live ? "default" : "pointer",
+      }}
+    >
+      <motion.span
+        animate={{
+          opacity: live ? [0.6, 1, 0.6] : 1,
+          scale: live ? [1, 1.25, 1] : 1,
+        }}
+        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+        style={{ width: 7, height: 7, borderRadius: "50%", background: `hsl(${tone})`, flexShrink: 0 }}
+      />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {live ? `v${version ?? "?"}` : word}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * What the stage shows when there is no engine behind it.
+ *
+ * Deliberately not a spinner: every state here is one a person can act on, so
+ * each one says what happened and offers the action that fixes it.
+ */
+function LinkFailure({ link, onRetry }: { link: Link; onRetry: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const detail = "detail" in link ? link.detail : "";
+
+  const report = [
+    `stan: ${link.state}`,
+    `szczegóły: ${detail || "—"}`,
+    `powłoka: ${inTauri() ? "Tauri" : "przeglądarka"}`,
+    `adres: ${window.location.href}`,
+    `czas: ${new Date().toISOString()}`,
+  ].join("\n");
+
+  const restart = async () => {
+    setBusy(true);
+    try {
+      if (inTauri()) await restartEngine();
+    } finally {
+      setBusy(false);
+      onRetry();
+    }
+  };
+
+  return (
+    <div
+      style={{
+        height: "100%",
+        display: "grid",
+        placeContent: "center",
+        justifyItems: "center",
+        gap: 16,
+        textAlign: "center",
+        padding: 24,
+        maxWidth: 520,
+        margin: "0 auto",
+      }}
+    >
+      <div style={{ fontSize: 34, opacity: 0.5 }}>◍</div>
+      <div style={{ fontSize: 17, fontWeight: 550 }}>{LINK_WORDS[link.state].word}</div>
+      {detail && <p className="soft" style={{ margin: 0, lineHeight: 1.5 }}>{detail}</p>}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+        <button className="btn" onClick={onRetry} disabled={busy}>
+          Spróbuj ponownie
+        </button>
+        {inTauri() && (
+          <button className="btn" onClick={restart} disabled={busy}>
+            {busy ? "Uruchamiam…" : "Uruchom silnik ponownie"}
+          </button>
+        )}
+        <button
+          className="btn btn--quiet"
+          onClick={() => {
+            void navigator.clipboard.writeText(report).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            });
+          }}
+        >
+          {copied ? "Skopiowano" : "Skopiuj diagnostykę"}
+        </button>
+      </div>
+
+      <p className="tiny faint" style={{ margin: 0, lineHeight: 1.5 }}>
+        Log silnika:&nbsp;
+        <code>%LOCALAPPDATA%\ai.garis.desktop\logs\engine.log</code>
+      </p>
     </div>
   );
 }

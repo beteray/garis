@@ -24,7 +24,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (245 testy). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (249 testów). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
@@ -51,7 +51,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 245 passed
+.venv/bin/python -m pytest -q                 # 249 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -178,6 +178,32 @@ Zapisane, żeby nie wpaść drugi raz:
   (`CreateJobObjectW`, `SetInformationJobObject`, `AssignProcessToJobObject`)
   deklarujemy sami, zamiast dokładać drugi, dużo większy crate.
 
+- **Okno Tauri nigdy nie jest same-origin z silnikiem — potrzebny jest CORS.**
+  Spakowana aplikacja serwuje strony z `tauri://localhost` (macOS/Linux) albo
+  `http://tauri.localhost` (Windows), a silnik słucha na `127.0.0.1`. Każdy
+  `fetch` z okna jest więc cross-origin i **przeglądarka blokuje go, zanim
+  dojdzie do uwierzytelnienia**. Objaw: okno wstaje, mówi „łączę się…" i żaden
+  przycisk nic nie robi — bo każdy przycisk to wywołanie API. Wygląda jak
+  zepsuty frontend, a jest jedną brakującą funkcją w serwerze. Pilnuje tego
+  `test_api.py`; lista dozwolonych origin, nigdy `*` — pod 127.0.0.1 może
+  zapukać dowolna strona, którą użytkownik ma otwartą.
+- **Skompilowany interfejs to nie obejrzany interfejs.** Cały etap 2 przeszedł
+  bez jednego uruchomienia UI. `apps/desktop/tools/ui-probe.mjs` otwiera go w
+  prawdziwym Chromium przeciwko żywemu silnikowi i w minutę znalazł brak CORS,
+  przepełnienie układu i to, że panele są szarymi kaflami. Uruchamiaj po każdej
+  zmianie w UI i **oglądaj zrzuty** — „brak przepełnienia" to nie to samo co
+  „wygląda dobrze".
+- **`elementFromPoint` mówi, co naprawdę przechwytuje kliknięcie.** Szybciej niż
+  czytanie z-indeksów: sonda podaje ścieżkę elementu pod kursorem w miejscu
+  przycisku.
+- **Warstwa większa niż okno robi przewijanie całej aplikacji.** Aurora ma
+  `inset: -20%`, żeby jej krawędzie nie wchodziły w kadr — bez `overflow: hidden`
+  na `#root` ten zapas staje się przepełnieniem strony.
+- **Szkło nad płaskim tłem to szary prostokąt.** `backdrop-filter` nad jednolitym
+  ciemnym wypełnieniem rozmywa się do jednego koloru. Dopiero powolne, kolorowe
+  światło pod spodem daje rozmyciu materiał — i dopiero wtedy panele różnią się
+  od siebie.
+
 ## Etap 2 — co zrobione, co zostało
 
 Zrobione:
@@ -202,7 +228,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 245 testy, musi być zielone
+.venv/bin/python -m pytest -q            # 249 testy, musi być zielone
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

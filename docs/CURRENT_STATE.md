@@ -30,7 +30,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → policy → zgoda → dzierżawa → wykonanie → audyt` | ✅ | 245 testów |
+| Runtime: `resolve → policy → zgoda → dzierżawa → wykonanie → audyt` | ✅ | 249 testów |
 | Bramki zgody (płatność, publikacja, wiadomość, poświadczenia, trwałe usunięcie) | ✅ | `test_policy.py` |
 | Osobowość nie ma dostępu do `PolicyEngine` | ✅ | test strukturalny na sygnaturze |
 | Pamięć szyfrowana w spoczynku | ✅ | `test_memory.py` czyta surowy plik |
@@ -41,22 +41,30 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | Brama powiadomień (cisza, gra, duplikaty, limit) | ✅ | `test_notifications.py` |
 | Warstwa decyzyjna głosu (stany, słowo aktywacyjne, kalibracja) | ✅ | `test_voice.py` |
 | Lokalne API HTTP + WebSocket | ✅ | `test_api.py` |
+| CORS dla okna Tauri | ✅ | `test_api.py` — bez tego okno nie łączy się wcale |
 | **Narzędzia Windows** (rejestr, firewall, usługi, ekran, mysz, winget) | ❔ | deklarują platformę; nigdy nie wykonane na Windows |
 | Audio (mikrofon, głośniki, STT, TTS) | ❌ | nie istnieje — etap 3 |
 
-Weryfikacja: `pytest` 245 zielonych · `ruff` czysto · `mypy` czysto (60 plików).
+Weryfikacja: `pytest` 249 zielonych · `ruff` czysto · `mypy` czysto (60 plików).
 
 ## Interfejs (React/TypeScript)
+
+Interfejs został wreszcie **wyświetlony i wyklikany** — `apps/desktop/tools/ui-probe.mjs`
+otwiera go w prawdziwym Chromium przeciwko żywemu silnikowi. Pierwsze uruchomienie
+znalazło przyczynę wszystkich objawów z testu na Windows: brak CORS.
 
 | Obszar | Stan |
 |---|---|
 | Build produkcyjny, TypeScript strict | ✅ `npm run build` |
-
-| Kula WebGL + fallback bez WebGL | 🔨 kompiluje się, nieoglądane w przeglądarce |
-| Panele, karty zgód, onboarding | 🔨 |
-| Animacje, Liquid Glass, `prefers-reduced-motion` | ❔ nikt tego nie zobaczył |
-
-Interfejs nie był ani razu **wyświetlony**. Przechodzi kompilator, i tyle.
+| Połączenie z runtime | ✅ status `v0.1.0`, `/api/state` czytane przez okno |
+| Nawigacja — wszystkie sekcje | ✅ każda klikalna, sonda przechodzi po kolei |
+| Zapis klucza modelu (Gemini) | ✅ zapisany, w sejfie, zaszyfrowany, przetrwał przeładowanie |
+| Brak przepełnienia układu | ✅ 900×620, 1160×760, 1280×700, 1920×1080 |
+| Onboarding | ✅ pojawia się i daje się przejść |
+| Stany połączenia + restart silnika + kopiowanie diagnostyki | 🔨 napisane, ścieżka Tauri nieuruchomiona |
+| Kula WebGL + fallback | 🔨 |
+| Liquid Glass — warstwy, aurora, ziarno | 🔨 przebudowane, oglądane na zrzutach, nie na Windows |
+| Skalowanie Windows 125/150/175% | ❔ |
 
 ## Powłoka (Rust / Tauri 2)
 
@@ -88,7 +96,7 @@ wymagają maszyny z Windows 11.
 |---|---|---|
 | 1 | `git status`, commit | ✅ |
 | 2 | zależności | ✅ |
-| 3 | testy Python | ✅ 245 |
+| 3 | testy Python | ✅ 249 |
 | 4 | `ruff`, `mypy` | ✅ |
 | 5 | build frontendu | ✅ |
 | 6 | `cargo fmt --check` | ✅ |

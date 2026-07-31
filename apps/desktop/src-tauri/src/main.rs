@@ -53,6 +53,26 @@ fn open_window(app: AppHandle) {
     show(&app);
 }
 
+/// Try the engine again, from the window, without restarting the whole app.
+///
+/// The alternative is telling someone whose agent did not come up to quit and
+/// reopen it — which is the sort of advice that makes an app feel broken even
+/// when the retry would have worked.
+#[tauri::command]
+fn restart_engine(app: AppHandle) -> EngineInfo {
+    stop_engine(&app);
+    *app.state::<Engine>()
+        .info
+        .lock()
+        .expect("engine info poisoned") = EngineInfo::default();
+    start_engine(&app);
+    app.state::<Engine>()
+        .info
+        .lock()
+        .expect("engine info poisoned")
+        .clone()
+}
+
 /// Where the engine's own output goes.
 ///
 /// A packaged build has no console, so without a file on disk a failed start is
@@ -304,7 +324,11 @@ fn main() {
             Some(vec!["--minimised"]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![engine_info, open_window])
+        .invoke_handler(tauri::generate_handler![
+            engine_info,
+            open_window,
+            restart_engine
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             start_engine(&handle);

@@ -175,24 +175,86 @@ export interface Envelope {
 
 const DEFAULT_BASE = "http://127.0.0.1:8756";
 
+export function inTauri(): boolean {
+  return Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+}
+
+/**
+ * Every way the window can fail to reach the engine.
+ *
+ * One word — "łączę się…" — for all of them is the difference between an app
+ * that is starting and an app that is broken, and the user could not tell which.
+ * Each of these needs a different action from them, so each gets its own name.
+ */
+export type Link =
+  | { state: "starting" }          // the shell is launching the engine
+  | { state: "handshake" }         // engine launched, waiting for it to say where it is
+  | { state: "connected" }
+  | { state: "engine-failed"; detail: string }
+  | { state: "bad-token"; detail: string }
+  | { state: "no-response"; detail: string }
+  | { state: "retrying"; attempt: number };
+
+export interface Discovery {
+  base: string;
+  token: string;
+  /** Why the shell has no engine to offer, if it has none. */
+  error: string;
+  /** True when the shell answered — i.e. we are packaged, not in a dev browser. */
+  fromShell: boolean;
+}
+
 /** Where the engine is and how to prove we may talk to it. */
-export async function discover(): Promise<{ base: string; token: string }> {
+export async function discover(): Promise<Discovery> {
   // Inside Tauri the shell knows, because it started the engine itself.
-  const tauri = (window as unknown as { __TAURI_INTERNALS__?: unknown })
-    .__TAURI_INTERNALS__;
-  if (tauri) {
+  if (inTauri()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const info = await invoke<{ base: string; token: string }>("engine_info");
-      if (info?.token) return info;
-    } catch {
-      // Fall through: a dev browser session is a legitimate way to run the UI.
+      const info = await invoke<{ base: string; token: string; error?: string }>("engine_info");
+      if (info?.token) {
+        return { base: info.base, token: info.token, error: "", fromShell: true };
+      }
+      return { base: info?.base || DEFAULT_BASE, token: "", error: info?.error ?? "", fromShell: true };
+    } catch (cause) {
+      return {
+        base: DEFAULT_BASE,
+        token: "",
+        error: `Powłoka nie odpowiedziała na pytanie o silnik (${String(cause)}).`,
+        fromShell: true,
+      };
     }
   }
   const params = new URLSearchParams(window.location.search);
   return {
     base: params.get("base") ?? localStorage.getItem("garis.base") ?? DEFAULT_BASE,
     token: params.get("token") ?? localStorage.getItem("garis.token") ?? "",
+    error: "",
+    fromShell: false,
+  };
+}
+
+/** Ask the shell to start the engine again, and hand back what it found. */
+export async function restartEngine(): Promise<Discovery> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("restart_engine");
+  return discover();
+}
+
+/** Turn a failed request into the one sentence that says what to do about it. */
+export function classify(cause: unknown): Link {
+  if (cause instanceof ApiError) {
+    if (cause.status === 401 || cause.status === 403) {
+      return {
+        state: "bad-token",
+        detail: "Silnik odrzucił token tego okna. Uruchom silnik ponownie, żeby dostać nowy.",
+      };
+    }
+    return { state: "no-response", detail: `Silnik odpowiedział błędem ${cause.status}: ${cause.message}` };
+  }
+  return {
+    state: "no-response",
+    detail:
+      "Silnik nie odpowiada pod wskazanym adresem. Albo jeszcze wstaje, albo nie wystartował.",
   };
 }
 
@@ -219,8 +281,16 @@ export class GarisApi {
   setCredentials(base: string, token: string) {
     this.base = base;
     this.token = token;
+    // Only a dev browser session needs these remembered. In a packaged app the
+    // shell hands the token over on every start, so writing it to localStorage
+    // would leave a live credential lying around for no benefit at all.
+    if (inTauri()) return;
     localStorage.setItem("garis.base", base);
     localStorage.setItem("garis.token", token);
+  }
+
+  get endpoint(): string {
+    return this.base;
   }
 
   private async request<T>(

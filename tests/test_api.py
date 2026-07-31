@@ -507,3 +507,72 @@ async def test_approval_payload_carries_every_field_the_card_reads(
     approval = body["approvals"][0]
     assert {"id", "task_id", "tool", "prompt", "effects", "state",
             "requested_at"} <= set(approval)
+
+
+# ------------------------------------------------------------------------ CORS
+
+
+async def raw_call(
+    api: ApiServer,
+    method: str,
+    path: str,
+    *,
+    origin: str | None = None,
+    token: str | None = "use-real",
+) -> tuple[int, dict[str, str]]:
+    """Like `call`, but hands back the response headers — CORS lives there."""
+    reader, writer = await asyncio.open_connection(api.host, api.port)
+    lines = [f"{method} {path} HTTP/1.1", f"Host: {api.host}:{api.port}"]
+    if origin is not None:
+        lines.append(f"Origin: {origin}")
+    if token is not None:
+        lines.append(f"Authorization: Bearer {api.token if token == 'use-real' else token}")
+    writer.write(("\r\n".join(lines) + "\r\n\r\n").encode())
+    await writer.drain()
+
+    raw = await reader.read(-1)
+    writer.close()
+    head, _, _ = raw.partition(b"\r\n\r\n")
+    parts = head.decode("latin-1").split("\r\n")
+    status = int(parts[0].split(" ")[1])
+    headers = {}
+    for line in parts[1:]:
+        name, _, value = line.partition(":")
+        headers[name.strip().lower()] = value.strip()
+    return status, headers
+
+
+async def test_the_desktop_window_is_allowed_to_talk_to_the_engine(server: ApiServer) -> None:
+    """The window is never same-origin with the engine.
+
+    A packaged Tauri app runs from tauri://localhost (or http://tauri.localhost on
+    Windows) while the engine listens on 127.0.0.1. Without these headers the
+    browser blocks every request before it is even authenticated, and the window
+    sits on "łączę się…" forever with every button dead.
+    """
+    for origin in ("http://tauri.localhost", "tauri://localhost", "https://tauri.localhost"):
+        status, headers = await raw_call(server, "GET", "/api/state", origin=origin)
+        assert status == 200
+        assert headers.get("access-control-allow-origin") == origin, origin
+
+
+async def test_the_preflight_is_answered_before_any_credentials_exist(server: ApiServer) -> None:
+    """A preflight carries no token, so it must pass without one."""
+    status, headers = await raw_call(
+        server, "OPTIONS", "/api/vault", origin="http://tauri.localhost", token=None
+    )
+    assert status == 200
+    assert "authorization" in headers.get("access-control-allow-headers", "").lower()
+    assert "POST" in headers.get("access-control-allow-methods", "")
+
+
+async def test_a_random_web_page_is_not_allowed_to_reach_the_agent(server: ApiServer) -> None:
+    """Loopback is not privacy: any page the user opens can try 127.0.0.1."""
+    status, headers = await raw_call(server, "GET", "/api/state", origin="https://example.com")
+    assert "access-control-allow-origin" not in headers
+    assert status == 200  # the token still governs the answer; CORS governs the browser
+
+
+async def test_the_development_server_is_allowed_too(server: ApiServer) -> None:
+    _, headers = await raw_call(server, "GET", "/api/health", origin="http://localhost:5183")
+    assert headers.get("access-control-allow-origin") == "http://localhost:5183"
