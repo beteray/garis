@@ -3,7 +3,17 @@
 Plik dla każdego, kto siada do tego projektu — człowieka albo modelu.
 **Aktualizowany na koniec każdego etapu.**
 
-Ostatnia aktualizacja: etap 2 w toku (API + interfejs gotowe, powłoka natywna napisana).
+Ostatnia aktualizacja: etap 2 w toku (API + interfejs gotowe, powłoka natywna
+kompiluje się pod Linux i pod target Windows, ale nie została uruchomiona).
+
+**Zanim uwierzysz, że coś działa — przeczytaj `docs/CURRENT_STATE.md`.**
+Rozdziela zweryfikowane od tylko-skompilowanego, bo w tym projekcie ta różnica
+zdążyła już raz kosztować: powłoka miała za sobą pełny code review i nie
+kompilowała się w ogóle.
+
+- `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
+- `docs/KNOWN_ISSUES.md` — co blokuje. Najpierw §1: instalator nie wozi silnika.
+- `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
 
 ## Kto prowadzi
 
