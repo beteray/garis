@@ -28,6 +28,7 @@ from .base import (
     Provider,
     Usage,
 )
+from .health import HealthMonitor, ProviderHealth, ProviderStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,12 +74,39 @@ class ModelRouter:
         config: ModelsConfig | None = None,
         *,
         bus: EventBus | None = None,
+        health: HealthMonitor | None = None,
     ) -> None:
         self.providers = list(providers)
         self.config = config or ModelsConfig()
         self.bus = bus
+        # Optional so a test can build a router without a network story. Without
+        # it the router falls back to the old question — "is a key present?" —
+        # which is exactly the question the health monitor exists to replace.
+        self.health = health
         self.usage = Usage()
         self._spend = 0.0
+
+    # ------------------------------------------------------------- live providers
+
+    def replace(self, providers: Sequence[Provider]) -> None:
+        """Swap the provider set without becoming a different router.
+
+        The planner, the verifier and the voice layer all hold this object. A new
+        key must reach them, and rebuilding the router would not.
+        """
+        self.providers = list(providers)
+
+    def usable(self, provider: Provider) -> bool:
+        """Would the router send work here right now, and is that a measured yes."""
+        if not provider.available():
+            return False
+        return self.health is None or self.health.usable(provider.name)
+
+    def state_of(self, provider: Provider) -> ProviderHealth:
+        if self.health is not None:
+            return self.health.status(provider.name)
+        status = ProviderStatus.ONLINE if provider.available() else ProviderStatus.INVALID_CONFIG
+        return ProviderHealth(provider=provider.name, status=status)
 
     # ------------------------------------------------------------------ ranking
 
@@ -104,7 +132,7 @@ class ModelRouter:
         out: list[Choice] = []
 
         for provider in self.providers:
-            if not provider.available():
+            if not self.usable(provider):
                 continue
             for model in provider.models():
                 if not model.supports(need.job):
@@ -144,10 +172,31 @@ class ModelRouter:
         if not found:
             raise NoModelAvailable(
                 f"Brak modelu dla zadania {need.job.value} "
-                f"(prywatność: {need.privacy.value}, dostawcy: "
-                f"{[p.name for p in self.providers if p.available()]})"
+                f"(prywatność: {need.privacy.value}); {self.why_unavailable()}",
+                user_message=self._no_model_sentence(),
             )
         return found[0]
+
+    def why_unavailable(self) -> str:
+        """One line naming every provider and the reason it is out.
+
+        "No model available" is a useless thing to tell somebody. "The Gemini key
+        was rejected" is something they can fix.
+        """
+        return ", ".join(
+            f"{p.name}: {self.state_of(p).sentence()}" for p in self.providers
+        ) or "brak skonfigurowanych dostawców"
+
+    def _no_model_sentence(self) -> str:
+        blocked = [
+            (p.name, self.state_of(p))
+            for p in self.providers
+            if not self.usable(p)
+        ]
+        if not blocked:
+            return NoModelAvailable.user_message or ""
+        name, health = blocked[0]
+        return f"Nie mam teraz dostępnego modelu — {name}: {health.sentence().lower()}"
 
     # ------------------------------------------------------------------ calling
 
@@ -171,7 +220,8 @@ class ModelRouter:
         ranked = self.candidates(need)
         if not ranked:
             raise NoModelAvailable(
-                f"Brak modelu dla zadania {need.job.value}",
+                f"Brak modelu dla zadania {need.job.value}; {self.why_unavailable()}",
+                user_message=self._no_model_sentence(),
             )
 
         errors: list[str] = []
@@ -192,13 +242,11 @@ class ModelRouter:
                 )
             except ProviderError as exc:
                 errors.append(f"{choice}: {exc}")
-                self._emit("model.fallback", model=str(choice), error=str(exc))
-                if not exc.retryable:
-                    continue
+                self._note_failure(choice, exc)
                 continue
             except Exception as exc:
                 errors.append(f"{choice}: {type(exc).__name__}: {exc}")
-                self._emit("model.fallback", model=str(choice), error=str(exc))
+                self._note_failure(choice, exc)
                 continue
 
             self._record(completion)
@@ -252,23 +300,30 @@ class ModelRouter:
         if self.bus is not None:
             self.bus.emit(topic, **payload)
 
+    def _note_failure(self, choice: Choice, exc: BaseException) -> None:
+        """A failure during real work is a health measurement like any other.
+
+        Without this, a key revoked at noon keeps looking healthy until the next
+        hourly check, and every task in between pays for the lie.
+        """
+        self._emit("model.fallback", model=str(choice), error=str(exc))
+        if self.health is not None:
+            self.health.note_failure(choice.provider.name, exc)
+
     # ------------------------------------------------------------------ report
 
     def describe(self) -> dict[str, Any]:
-        """Used by ``garis doctor`` — which providers answer, what they offer."""
+        """Used by ``garis doctor`` and every surface — who answers, and why not.
+
+        ``available`` now means "the router will send work here", not "a key is
+        on file". Those were treated as the same thing, and they are not.
+        """
         return {
             "privacy": self.config.privacy,
             "allow_cloud": self.config.allow_cloud,
             "monthly_budget": self.config.monthly_budget,
             "spend": round(self._spend, 4),
-            "providers": [
-                {
-                    "name": p.name,
-                    "available": p.available(),
-                    "models": [m.name for m in p.models()],
-                }
-                for p in self.providers
-            ],
+            "providers": [self.describe_provider(p) for p in self.providers],
             "picks": {
                 job.value: str(self.candidates(Need(job=job))[0])
                 if self.candidates(Need(job=job))
@@ -277,14 +332,29 @@ class ModelRouter:
             },
         }
 
+    def describe_provider(self, provider: Provider) -> dict[str, Any]:
+        health = self.state_of(provider)
+        return {
+            "name": provider.name,
+            "available": self.usable(provider),   # every surface already reads this
+            "models": [m.name for m in provider.models()],
+            "status": health.status.value,
+            "reason": health.sentence(),
+            "detail": health.detail,
+            "checked_at": health.checked_at,
+            "latency_ms": round(health.latency_ms, 1),
+            "retry_after": health.retry_after,
+            "failures": health.failures,
+        }
+
     def available_providers(self) -> list[str]:
-        return [p.name for p in self.providers if p.available()]
+        return [p.name for p in self.providers if self.usable(p)]
 
     def add(self, provider: Provider) -> None:
         self.providers.append(provider)
 
     def has_any(self) -> bool:
-        return any(p.available() for p in self.providers)
+        return any(self.usable(p) for p in self.providers)
 
 
 def jobs_of(models: Iterable[ModelSpec]) -> set[Job]:

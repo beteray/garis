@@ -43,14 +43,39 @@ garis token                        # sam token, gdy serwer już działa
 | PATCH | `/api/memory/{id}` | `{content?, subject?, tags?, pinned?}` |
 | DELETE | `/api/memory/{id}` | Zapomnij |
 | GET | `/api/vault` | Nazwy dostępów, bez wartości |
-| POST | `/api/vault` | `{name, value, note?}` → `{ref}` |
+| POST | `/api/vault` | `{name, value, note?}` → `{ref, providers}` — **przebudowuje dostawców i sprawdza ich, zanim odpowie** |
 | DELETE | `/api/vault/{name}` | Usuń dostęp |
+| GET | `/api/providers` | Stan każdego dostawcy modeli: `status`, `reason`, `checked_at` |
+| POST | `/api/providers/check` | Wymuś health check teraz („Sprawdź ponownie") |
 | GET | `/api/devices` | Znane komputery i serwery |
 | GET | `/api/tools` | Katalog zdolności z deklarowanymi efektami |
 | GET | `/api/activity` | `?minutes=` — „co robiłeś przez ostatnią godzinę?" |
 | GET | `/api/audit` | `?task=` `?limit=` |
 | GET | `/api/config` | Pełna konfiguracja |
-| PATCH | `/api/config` | `{"voice.wake_word": "garis", "dev.verbose": true}` — klucze kropkowane |
+| PATCH | `/api/config` | `{"voice.wake_word": "garis", "dev.verbose": true}` — klucze kropkowane, **wszystko albo nic** |
+
+### Dostawca modeli
+
+Każdy wpis w `/api/providers` i w `models.providers` z `/api/state`:
+
+```json
+{"name": "gemini", "available": false, "models": ["gemini-2.5-pro", "…"],
+ "status": "invalid_key", "reason": "Klucz odrzucony przez dostawcę.",
+ "detail": "HTTP 400: …", "checked_at": 1785400000.1, "latency_ms": 214.0,
+ "retry_after": 0, "failures": 1}
+```
+
+`status` to jedna z siedmiu wartości: `online`, `offline`, `invalid_config`,
+`invalid_key`, `timeout`, `rate_limit`, `unknown` (patrz
+`docs/STATE_MACHINES.md` §3). `available` znaczy teraz „router tam pośle pracę",
+a nie „klucz jest w sejfie" — to były dwie różne rzeczy traktowane jak jedna.
+`reason` jest po polsku i nadaje się do pokazania wprost; `detail` jest
+techniczny i należy do trybu developerskiego.
+
+**Zmiana ustawień jest atomowa.** `PATCH /api/config` waliduje całość na kopii —
+jedna nieznana ścieżka odrzuca całe żądanie (`400`), zamiast zostawić połowę
+zastosowaną. Odpowiedź zawiera `paths` z listą ścieżek, które faktycznie się
+zmieniły; pusta lista znaczy „zapisano to samo, nic się nie ruszyło".
 
 Kody: `200`, `201` (utworzono), `401` (brak/zły token), `404`, `409` (np. sekret
 wysłany do pamięci — z podpowiedzią, że miejsce na to jest w sejfie), `422`
@@ -77,7 +102,13 @@ klient nigdy nie musi czekać na kolejne zdarzenie, żeby wiedzieć, co się dzi
 Tematy: `task.created`, `task.started`, `task.step`, `task.progress`,
 `task.finished`, `task.failed`, `task.blocked`, `task.stopped`,
 `approval.requested`, `approval.resolved`, `agent.state`, `voice.state`,
-`notice`, `speak`, `memory.changed`, `subscription.item`.
+`notice`, `speak`, `memory.changed`, `subscription.item`, `provider.health`,
+`config.changed`.
+
+`provider.health` (`{provider, status, reason, was}`) leci **tylko przy realnej
+zmianie stanu** — godzinne „nadal działa" nie jest wiadomością. `config.changed`
+(`{paths, source}`) mówi, które ustawienia się ruszyły i czy zmiana przyszła
+z interfejsu (`source: "user"`), czy z ręcznie edytowanego pliku (`"disk"`).
 
 `agent.state` (`thinking` / `working` / `verifying` / `blocked` / `done` /
 `failed`) i `voice.state` (`listening` / `speaking`) napędzają animowaną kulę w

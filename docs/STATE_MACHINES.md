@@ -89,45 +89,79 @@ wskazówki.
 
 ---
 
-## 3. Dostawca modeli
+## 3. Dostawca modeli — **zaimplementowane** (`models/health.py`)
 
-Dziś: `available: true/false`, wyprowadzone z obecności klucza w sejfie.
-Zmierzone: całkowicie nieprawidłowy klucz raportuje `available: true`.
+Było: `available: true/false`, wyprowadzone z obecności klucza w sejfie.
+Zmierzone: całkowicie nieprawidłowy klucz raportował `available: true`.
 
-Docelowo:
+Jest: **siedem statusów silnika**, mierzonych, nie zakładanych.
 
 ```
-brak klucza ──► klucz zapisany ──► sprawdzam ──┬──► skonfigurowany
-                                               ├──► klucz nieprawidłowy
-                                               ├──► brak środków
-                                               ├──► limit wyczerpany
-                                               └──► niedostępny
+                        ┌──► ONLINE          router używa
+                        ├──► INVALID_KEY     klucz odrzucony
+brak sprawdzenia        ├──► INVALID_CONFIG  brak klucza / zły adres / wyłączony
+   UNKNOWN ──► check ───┼──► RATE_LIMIT      limit albo brak środków
+   (używalny)           ├──► TIMEOUT         jest, ale nie zdążył
+                        └──► OFFLINE         nie odpowiada
 ```
 
-| Stan | Co widzi użytkownik | Czy router go użyje |
+| Status | Zdanie dla użytkownika | Czy router go użyje |
 |---|---|---|
-| `no_key` | „Brak klucza" | nie |
-| `key_stored` | „Sprawdzam…" | nie |
-| `validating` | „Sprawdzam…" | nie |
-| `configured` | „Gotowy" | tak |
-| `invalid_key` | „Klucz odrzucony przez dostawcę" | nie |
-| `no_credit` | „Brak środków na koncie" | nie |
-| `rate_limited` | „Limit wyczerpany, wróci o *(godzina)*" | nie, do czasu |
-| `unavailable` | „Dostawca nie odpowiada" | nie, ponawiam |
-| `disabled` | „Wyłączony przez Ciebie" | nie |
+| `online` | „Gotowy." | tak |
+| `unknown` | „Jeszcze nie sprawdzałem." | **tak** |
+| `invalid_config` | „Brak klucza." / „Zły adres dostawcy." | nie |
+| `invalid_key` | „Klucz odrzucony przez dostawcę." | nie |
+| `rate_limit` | „Limit u dostawcy wyczerpany." / „Brak środków na koncie u dostawcy." | nie, do `retry_after` |
+| `timeout` | „Dostawca nie odpowiedział na czas." | nie |
+| `offline` | „Dostawca nie odpowiada." | nie |
 
-**Health check:** najtańsze możliwe wywołanie u dostawcy przy zapisie klucza,
-przy starcie i co godzinę. Wynik jest cache'owany — nie odpytujemy przed każdym
-zadaniem.
+**Dlaczego `UNKNOWN` jest używalny.** „Nie sprawdzałem" to nie to samo co
+„zepsute". Gdyby brak pomiaru blokował, komputer wstający bez sieci nie miałby
+agenta w ogóle. Wina blokuje; brak dowodu nie.
 
-**Przeładowanie bez restartu.** To jest naprawa P0-1: zapis do sejfu emituje
-zdarzenie, router przebudowuje dostawców, `/api/state` natychmiast pokazuje
-nowy stan. Dziś wymaga restartu i nikt o tym nie mówi.
+**Dziewięć stanów produktowych, siedem statusów silnika.** Interfejs pokazuje
+więcej niż silnik rozróżnia, bo część stanów to ta sama sytuacja z innym
+powodem. Mapowanie jest jednoznaczne i to ono jest kontraktem UI:
 
-**Kryteria wyboru modelu** (dziś: jakość × szybkość × koszt × prywatność):
-dochodzi rozmiar kontekstu, wsparcie narzędzi, **modalność**, status `preview`,
-bieżąca dostępność, limity i preferencja użytkownika. Zmierzony błąd:
-`gemini-2.5-flash-native-audio-preview` wygrywa ranking na czat tekstowy.
+| Stan produktowy | `status` + `reason` |
+|---|---|
+| brak klucza | `invalid_config` + „Brak klucza." |
+| wyłączony przez Ciebie | `invalid_config` (dostawca nie jest w ogóle budowany) |
+| sprawdzam… | `unknown`, dopóki nie wróci pierwszy check |
+| gotowy | `online` |
+| klucz nieprawidłowy | `invalid_key` |
+| brak środków | `rate_limit` + „Brak środków na koncie u dostawcy.", `retry_after = 0` |
+| limit wyczerpany | `rate_limit` + `retry_after` z nagłówka `Retry-After` |
+| dostawca nie odpowiada | `offline` |
+| dostawca za wolny | `timeout` |
+
+Rozróżnienie „limit wróci sam" od „brak środków nie wróci sam" niesie
+`retry_after`: zero znaczy „nie odblokuje się samo, trzeba sprawdzić ponownie".
+
+**Health check:** najtańsze możliwe wywołanie u dostawcy (`GET /models`,
+`/api/tags` — listing, nie generowanie, więc nie kosztuje ani grosza) przy
+zapisie klucza, przy starcie i co godzinę. Wynik jest cache'owany — nie
+odpytujemy przed każdym zadaniem. Klasyfikacja odpowiedzi żyje **w jednym
+miejscu** (`classify_response`); adapter dostawcy podaje wyłącznie adres, żeby
+nowy dostawca nie mógł wymyślić własnego pojęcia „zły klucz".
+
+**Awaria w trakcie pracy też jest pomiarem.** Router zgłasza każdą nieudaną
+próbę do monitora (`note_failure`), więc klucz unieważniony w południe nie
+wygląda na sprawny do najbliższego sprawdzenia o pełnej godzinie.
+
+**Przeładowanie bez restartu** (naprawa P0-1): zapis do sejfu emituje
+`vault.changed`, `ProviderPool` przebudowuje dostawców i sprawdza tych, których
+konfiguracja faktycznie się ruszyła, a `/api/state` pokazuje nowy stan
+natychmiast. `POST /api/vault` **czeka** na przebudowę zamiast zostawiać ją
+pętli zdarzeń — następne żądanie może brzmieć „wykonaj zadanie" i musi zastać
+nowy klucz.
+
+**Kryteria wyboru modelu** (jakość × szybkość × koszt × prywatność): doszła
+bieżąca dostępność i limity. Naprawiony zmierzony błąd: modele natywnego audio
+(`gemini-2.5-flash-native-audio-preview`, `gpt-4o-realtime-preview`) deklarowały
+`Job.CHAT` i wygrywały ranking na zwykłą pisaną rozmowę — sesja mowa-w-mowę to
+inna modalność, nie tańszy czat. Zostaje do zrobienia: rozmiar kontekstu jako
+kryterium miękkie, status `preview` i preferencja użytkownika.
 
 ---
 

@@ -300,10 +300,13 @@ async def cmd_doctor(garis: Garis, args: argparse.Namespace) -> int:
 
     _out()
     _out(_bold("Modele"))
-    described = garis.router.describe()  # type: ignore[attr-defined]
+    # Doctor is the one place that should never report a guess: check first.
+    await garis.providers.refresh(force=True)
+    described = garis.router.describe()
     for provider in described["providers"]:
         mark = "✓" if provider["available"] else "—"
-        _out(f"  {mark} {provider['name']}: {len(provider['models'])} modeli")
+        _out(f"  {mark} {provider['name']}: {len(provider['models'])} modeli"
+             f" — {provider['reason']}")
     if not any(p["available"] and p["name"] != "fake" for p in described["providers"]):
         _out(_dim("  Brak kluczy API — działam na wbudowanej atrapie."))
         _out(_dim("  Dodaj klucz: garis vault set openai_api_key"))
@@ -381,6 +384,10 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
     if recovered:
         _out(_dim(f"Wznowiłem {len(recovered)} zadań po restarcie."))
 
+    # Providers checked and watched before the first request arrives: a client
+    # that connects immediately must see measured state, not assumptions.
+    await garis.start()
+
     api: ApiServer | None = None
     if not args.no_api:
         api = ApiServer(garis, host=args.host, port=args.port)
@@ -408,6 +415,7 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
         pass
     finally:
         subscription.close()
+        await garis.stop()
         if api is not None:
             await api.stop()
     return EXIT_OK

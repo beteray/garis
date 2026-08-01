@@ -3,8 +3,13 @@
 Plik dla każdego, kto siada do tego projektu — człowieka albo modelu.
 **Aktualizowany na koniec każdego etapu.**
 
-Ostatnia aktualizacja: etap 2 w toku (API + interfejs gotowe, powłoka natywna
-kompiluje się pod Linux i pod target Windows, ale nie została uruchomiona).
+Ostatnia aktualizacja: **M1 i M4 z `docs/ROADMAP.md` zrobione w silniku.**
+Konfiguracja i sejf przeładowują się bez restartu; dostawca modeli ma mierzony
+stan zamiast `available: bool`. Interfejsu tych rzeczy jeszcze nie pokazuje —
+kontrakt API jest gotowy (`docs/API.md`), ekran nie.
+
+Wcześniej: etap 2 (API + interfejs gotowe, powłoka natywna kompiluje się pod
+Linux i pod target Windows, ale nie została uruchomiona).
 
 **Zanim uwierzysz, że coś działa — przeczytaj `docs/CURRENT_STATE.md`.**
 Rozdziela zweryfikowane od tylko-skompilowanego, bo w tym projekcie ta różnica
@@ -29,15 +34,18 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (249 testów). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (298 testów). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
 core/src/garis/
   paths errors events config crypto store net    infrastruktura
-  memory.py vault.py                             stan, szyfrowanie
+  settings.py                                    ustawienia na żywo: jeden pisarz, obserwator pliku
+  memory.py vault.py                             stan, szyfrowanie (sejf ogłasza zmiany)
   runtime/                                       JEDYNA ścieżka wykonania
   models/ + models/providers/                    router + 5 dostawców
+    health.py                                    7 statusów dostawcy, mierzonych
+    pool.py                                      przebudowa przy zmianie + check co godzinę
   tools/                                         53 narzędzia
   agent/                                         plan → wykonaj → sprawdź → napraw
   tasks/                                         trwałość, współbieżność
@@ -56,7 +64,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 249 passed
+.venv/bin/python -m pytest -q                 # 298 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -99,6 +107,37 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
    człowiek naprawdę powinien to usłyszeć.
 8. **Raport buduje się z faktów** (`agent/report.py`), nie z modelu. Model nie
    opowiada, co zrobił.
+9. **Stan dostawcy jest mierzony, nie zakładany.** Obecność klucza w sejfie nie
+   jest dowodem na nic. Odpowiedź dostawcy klasyfikuje jedno miejsce
+   (`models/health.py`), nie każdy adapter po swojemu.
+10. **Konfiguracja podmienia wartości, nie obiekt.** `Config.adopt()` zachowuje
+    tożsamość pod-obiektów, bo pół silnika trzyma referencje do `config.autonomy`,
+    `config.models` i `config.notifications`.
+
+## Decyzje architektoniczne M1 + M4
+
+Zapisane, bo każda z nich wyglądała na kwestię gustu, a nie jest:
+
+- **`UNKNOWN` jest używalny przez router.** Gdyby brak pomiaru blokował, komputer
+  bez sieci nie miałby agenta w ogóle. Wina blokuje, brak dowodu nie.
+- **Siedem statusów silnika, dziewięć stanów produktowych.** Interfejs rozróżnia
+  „brak środków" od „limit wyczerpany"; silnik ma na to jeden status i różny
+  `reason` + `retry_after`. Mapowanie jest w `docs/STATE_MACHINES.md` §3 i to ono
+  jest kontraktem — nie wolno go zgadywać po stronie UI.
+- **`POST /api/vault` czeka na przebudowę dostawców.** Zdarzenie na szynie
+  wystarcza obserwatorom, ale nie wystarcza wywołującemu: następne żądanie może
+  brzmieć „wykonaj zadanie" i musi zastać nowy klucz. Zdarzenie zostaje dla
+  reszty procesu, jawne wywołanie daje determinizm. Obie drogi wchodzą do tej
+  samej idempotentnej `rebuild()`.
+- **Odpytywanie pliku konfiguracji zamiast obserwacji katalogu.** Zależność,
+  wątek i platformowe tryby awarii — po to, żeby zauważyć plik, który człowiek
+  edytuje ręcznie może dwa razy w roku. `stat` co dwie sekundy zachowuje się tak
+  samo na Windows, Linuksie i dysku sieciowym.
+- **Health check to listing modeli, nie generowanie.** Sprawdzenie, które kosztuje
+  pieniądze, przestanie być wykonywane — a wtedy wracamy do zgadywania.
+- **Awaria w trakcie pracy aktualizuje zdrowie.** Router zgłasza każdą nieudaną
+  próbę (`note_failure`), więc klucz unieważniony w południe nie udaje sprawnego
+  do najbliższej pełnej godziny.
 
 ## Pułapki, w które już wpadłem
 
@@ -208,6 +247,25 @@ Zapisane, żeby nie wpaść drugi raz:
   ciemnym wypełnieniem rozmywa się do jednego koloru. Dopiero powolne, kolorowe
   światło pod spodem daje rozmyciu materiał — i dopiero wtedy panele różnią się
   od siebie.
+- **Podmiana `garis.config` na nowy obiekt nie przeładowuje konfiguracji.**
+  `PolicyEngine` dostaje `config.autonomy`, router `config.models`, bramka
+  powiadomień `config.notifications` — po podmianie korzenia wszyscy trzej czytają
+  obiekt, którego nikt już nie edytuje, i nic nie pęka głośno. Stąd
+  `Config.adopt()`: wartości się zmieniają, tożsamości zostają.
+- **`urllib` opakowuje timeout w `URLError`.** Bez zajrzenia w `exc.reason` „za
+  wolno" i „nie ma trasy" wyglądają identycznie — a to dwa różne statusy dostawcy
+  i dwie różne porady dla człowieka. Stąd `NetworkTimeout` i `NetworkUnreachable`
+  w `errors.py`; rozróżnianie ich po treści komunikatu przeżyłoby dokładnie jedną
+  zmianę wording-u.
+- **`except BaseException` w pętli tła zjada `CancelledError`.** Sonda zdrowia ma
+  raportować awarię zamiast rzucać, ale `BaseException` sprawia, że zadanie w tle
+  przestaje dawać się zatrzymać. `Exception` wystarcza.
+- **Godzinne „nadal działa" to nie jest wiadomość.** Zdarzenie `provider.health`
+  leci wyłącznie przy realnej zmianie statusu, inaczej każde otwarte okno
+  dostawałoby powiadomienie co godzinę, w nieskończoność.
+- **Model natywnego audio deklarował `Job.CHAT`** i wygrywał ranking na pisaną
+  rozmowę, bo jest szybki i tani. Katalog musi rozróżniać modalność: sesja
+  mowa-w-mowę nie jest tańszym czatem.
 
 ## Etap 2 — co zrobione, co zostało
 
@@ -233,7 +291,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 249 testy, musi być zielone
+.venv/bin/python -m pytest -q            # 298 testów, musi być zielone
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

@@ -106,12 +106,45 @@ Konflikt rozwiązują dzierżawy zasobów o kluczach `file:…`, `app:…`, `dev
 ## Wybór modelu
 
 Wołający deklaruje `Need(job, privacy, requires, max_cost, prefer_speed)`.
-Router punktuje każdy model każdego dostępnego dostawcy: jakość × szybkość ×
+Router punktuje każdy model każdego **sprawnego** dostawcy: jakość × szybkość ×
 koszt × prywatność, z profilem zależnym od ustawienia prywatności i twardym
 priorytetem jakości dla `plan`, `reason`, `code`. Po wyczerpaniu budżetu zostają
 tylko modele darmowe (lokalne). Awaria dostawcy → następny w rankingu, cicho.
 
 Nazwy modeli i ceny żyją w plikach dostawców. Zmiana cennika to jeden plik.
+
+**„Sprawny" jest pomiarem, nie założeniem.** `models/health.py` sprawdza każdego
+dostawcę najtańszym możliwym wywołaniem (listing modeli — nie kosztuje nic) przy
+zapisie klucza, przy starcie i co godzinę, a wynik trzyma w cache, żeby żadne
+zadanie za to nie płaciło. Siedem statusów i zdanie dla użytkownika opisuje
+`docs/STATE_MACHINES.md` §3. Wcześniej „dostępny" znaczyło „klucz jest w sejfie",
+przez co całkiem nieprawidłowy klucz raportował się jako gotowy, a pierwsze
+prawdziwe zadanie padało na 401 w środku pracy.
+
+Klasyfikacja odpowiedzi jest **jedna** dla wszystkich dostawców
+(`classify_response`); adapter podaje wyłącznie adres do odpytania. Dzięki temu
+nowy dostawca nie może wprowadzić własnego rozumienia „zły klucz".
+
+## Konfiguracja na żywo
+
+Ustawienia i poświadczenia zmieniają się w trakcie działania, więc silnik nie
+może czytać ich raz przy starcie.
+
+- `SettingsService` (`settings.py`) jest **jedynym pisarzem** ustawień:
+  waliduje na kopii (żądanie w połowie błędne jest odrzucane w całości), zapisuje,
+  ogłasza `config.changed` ze ścieżkami, które faktycznie się ruszyły, i pilnuje
+  pliku (odpytywanie `stat` co dwie sekundy — plik edytowany ręcznie też ma
+  zadziałać, a zależność do obserwacji katalogu nie jest tego warta).
+- `Config.adopt()` podmienia **wartości w miejscu**, nie obiekt. `PolicyEngine`
+  trzyma `config.autonomy`, router `config.models`, bramka powiadomień
+  `config.notifications` — podmiana korzenia zostawiłaby ich wszystkich przy
+  konfiguracji, której nikt już nie edytuje.
+- `Vault.set()` ogłasza `vault.changed` (samą nazwę, nigdy wartość);
+  `ProviderPool` (`models/pool.py`) przebudowuje na to dostawców i sprawdza
+  tych, których odcisk konfiguracji się zmienił.
+
+Ścieżki zmiany zbiegają się w jednej idempotentnej metodzie `rebuild()`, więc
+zdarzenie i jawne wywołanie z API mogą przyjść oba i nic się nie dubluje.
 
 ## Pamięć i sejf
 

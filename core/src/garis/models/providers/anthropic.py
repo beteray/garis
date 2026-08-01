@@ -74,6 +74,12 @@ class AnthropicProvider:
     def available(self) -> bool:
         return bool(self._key)
 
+    def health_request(self) -> tuple[str, dict[str, str]] | None:
+        """Listing models costs nothing and still proves the key opens the door."""
+        if not self._key:
+            return None
+        return f"{self._base}/models", self._headers()
+
     def _headers(self) -> dict[str, str]:
         if not self._key:
             raise ProviderError("Brak klucza Anthropic", retryable=False)

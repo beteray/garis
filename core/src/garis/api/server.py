@@ -348,6 +348,9 @@ class ApiServer:
             route("POST", "/api/vault", self._store_secret),
             route("DELETE", "/api/vault/{name}", self._delete_secret),
 
+            route("GET", "/api/providers", self._providers),
+            route("POST", "/api/providers/check", self._check_providers),
+
             route("GET", "/api/devices", self._devices),
             route("GET", "/api/tools", self._tools),
             route("GET", "/api/activity", self._activity),
@@ -496,10 +499,41 @@ class ApiServer:
         ref = self.garis.memory.remember_secret(
             name, value, note=str(payload.get("note", ""))
         )
-        return ok({"ref": ref, "name": name}, status=201)
+        # Awaited, not fired off: the reply carries the provider's real state, so
+        # a settings screen can say "key rejected" instead of "saved" and let the
+        # user discover the truth during their first task.
+        await self._reload_providers("vault")
+        return ok(
+            {"ref": ref, "name": name, "providers": self._provider_views()},
+            status=201,
+        )
 
     async def _delete_secret(self, request: Request) -> Reply:
-        return ok({"deleted": self.garis.vault.delete(request.params["name"])})
+        deleted = self.garis.vault.delete(request.params["name"])
+        if deleted:
+            await self._reload_providers("vault")
+        return ok({"deleted": deleted})
+
+    # --- providers ---
+
+    async def _providers(self, request: Request) -> Reply:
+        return ok({"providers": self._provider_views()})
+
+    async def _check_providers(self, request: Request) -> Reply:
+        """Force a health check. This is what a "Sprawdź ponownie" button calls."""
+        pool = getattr(self.garis, "providers", None)
+        if pool is not None:
+            await pool.refresh(force=True)
+        return ok({"providers": self._provider_views()})
+
+    def _provider_views(self) -> list[dict[str, Any]]:
+        router = self.garis.router
+        return [router.describe_provider(p) for p in router.providers]
+
+    async def _reload_providers(self, reason: str) -> None:
+        reload = getattr(self.garis, "reload_providers", None)
+        if reload is not None:
+            await reload(reason=reason)
 
     # --- inspection ---
 
@@ -531,14 +565,16 @@ class ApiServer:
 
     async def _patch_config(self, request: Request) -> Reply:
         payload = request.json()
-        changed: dict[str, Any] = {}
-        for key, value in payload.items():
-            self.garis.config.set(str(key), value)
-            changed[str(key)] = self.garis.config.get(str(key))
-        self.garis.config.save(self.garis.paths)
+        # Through the settings service rather than straight onto the config: it
+        # validates on a copy (so a bad third field cannot half-apply), saves,
+        # and announces the paths that moved so the rest of the engine follows.
+        paths = self.garis.settings.apply(payload)
+        if any(path.startswith("models") for path in paths):
+            await self._reload_providers("config")
+        changed = {str(key): self.garis.config.get(str(key)) for key in payload}
         self.garis.bus.emit(Topic.NOTICE, message="Ustawienia zapisane", importance=1,
                             silent=True)
-        return ok({"changed": changed})
+        return ok({"changed": changed, "paths": list(paths)})
 
 
 def ensure_token(garis: Any) -> str:

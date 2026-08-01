@@ -469,7 +469,19 @@ async def test_provider_entries_have_the_shape_the_settings_screen_expects(
 ) -> None:
     _, body = await call(server, "GET", "/api/state")
     for provider in body["models"]["providers"]:
-        assert {"name", "available", "models"} <= set(provider)
+        assert {"name", "available", "models", "status", "reason"} <= set(provider)
+        assert provider["reason"], "każdy dostawca musi umieć powiedzieć, w jakim jest stanie"
+
+
+async def test_providers_can_be_listed_and_re_checked_on_demand(server: ApiServer) -> None:
+    """What the settings screen's "Sprawdź ponownie" button calls."""
+    status, listed = await call(server, "GET", "/api/providers")
+    assert status == 200
+    assert [p["name"] for p in listed["providers"]] == ["fake"]
+
+    status, checked = await call(server, "POST", "/api/providers/check")
+    assert status == 200
+    assert checked["providers"][0]["status"] == "online"
 
 
 async def test_task_payload_carries_every_field_the_interface_reads(

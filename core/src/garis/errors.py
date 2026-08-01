@@ -79,10 +79,14 @@ class ExecutionError(GarisError):
         tool: str | None = None,
         retryable: bool = True,
         user_message: str | None = None,
+        status: int = 0,
     ) -> None:
         super().__init__(message, user_message=user_message)
         self.tool = tool
         self.retryable = retryable
+        # HTTP status when the failure came from a server, 0 otherwise. Carried
+        # so callers can classify a failure without parsing the message text.
+        self.status = status
 
 
 class Unsupported(ExecutionError):
@@ -90,6 +94,19 @@ class Unsupported(ExecutionError):
 
     def __init__(self, message: str, *, tool: str | None = None) -> None:
         super().__init__(message, tool=tool, retryable=False)
+
+
+class NetworkUnreachable(ExecutionError):
+    """Nothing answered at the other end: no route, refused, DNS failure."""
+
+
+class NetworkTimeout(ExecutionError):
+    """Something is there but did not answer in time.
+
+    Separate from :class:`NetworkUnreachable` because the two mean different
+    things to a person: "your provider is down" versus "your connection is slow".
+    Telling them apart by message text would break on the first wording change.
+    """
 
 
 # --- state ------------------------------------------------------------------
@@ -145,6 +162,8 @@ __all__ = [
     "GarisError",
     "LeaseTimeout",
     "LockedError",
+    "NetworkTimeout",
+    "NetworkUnreachable",
     "NoModelAvailable",
     "PolicyDenied",
     "ProviderError",

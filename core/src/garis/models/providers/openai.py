@@ -53,7 +53,8 @@ MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(
         name="gpt-4o-realtime-preview",
         provider="openai",
-        jobs=frozenset({Job.VOICE, Job.CHAT}),
+        # VOICE only — see the note on Gemini's native-audio model.
+        jobs=frozenset({Job.VOICE}),
         capabilities=frozenset({Capability.REALTIME_VOICE, Capability.STREAMING,
                                 Capability.TOOLS}),
         quality=0.7, speed=0.95, input_cost=5.0, output_cost=20.0, context_tokens=128_000,
@@ -82,6 +83,12 @@ class OpenAIProvider:
 
     def available(self) -> bool:
         return bool(self._key)
+
+    def health_request(self) -> tuple[str, dict[str, str]] | None:
+        """Listing models costs nothing and still proves the key opens the door."""
+        if not self._key:
+            return None
+        return f"{self._base}/models", self._headers()
 
     def _headers(self) -> dict[str, str]:
         if not self._key:

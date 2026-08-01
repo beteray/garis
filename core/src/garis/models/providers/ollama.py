@@ -73,6 +73,10 @@ class OllamaProvider:
     def available(self) -> bool:
         return self._probed and bool(self._installed)
 
+    def health_request(self) -> tuple[str, dict[str, str]] | None:
+        """The same endpoint ``probe`` uses: is the local daemon running at all."""
+        return f"{self._base}/api/tags", {}
+
     async def probe(self, *, timeout: float = 2.0) -> bool:
         """Ask the local daemon what it has. Cheap, and failure is not an error."""
         try:

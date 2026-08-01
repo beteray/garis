@@ -33,6 +33,10 @@ STREAMED_TOPICS = (
     "speak",
     "memory.changed",
     "subscription.item",
+    # A provider going bad, or settings changing under an open window, are things
+    # a surface must see without polling — that is the whole point of M1.
+    "provider.health",
+    "config.changed",
 )
 
 

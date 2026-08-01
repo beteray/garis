@@ -193,6 +193,22 @@ class Config:
     def from_dict(cls, data: dict[str, Any]) -> Config:
         return _build(cls, data)
 
+    # --- reloading ---
+
+    def adopt(self, other: Config) -> tuple[str, ...]:
+        """Take on another config's values *without becoming another object*.
+
+        Reloading by replacing ``garis.config`` would be simpler and wrong: the
+        policy engine holds ``config.autonomy``, the router holds ``config.models``,
+        the notification gate holds ``config.notifications``. Rebinding the top
+        object leaves every one of them reading a config nobody edits any more.
+        So values move and identities stay.
+
+        Returns the dotted paths that actually changed — an empty tuple means the
+        file was rewritten with the same content and nobody needs to react.
+        """
+        return tuple(_adopt(self, other, ""))
+
     # --- dotted access, used by the settings UI and `garis config` ---
 
     def get(self, path: str) -> Any:
@@ -265,6 +281,42 @@ def _build(cls: type, data: Any) -> Any:
         else:
             kwargs[f.name] = value
     return cls(**kwargs)
+
+
+def _adopt(target: Any, source: Any, prefix: str) -> list[str]:
+    changed: list[str] = []
+    for f in dataclasses.fields(target):
+        path = f"{prefix}{f.name}"
+        current, incoming = getattr(target, f.name), getattr(source, f.name)
+        if dataclasses.is_dataclass(current) and type(current) is type(incoming):
+            changed += _adopt(current, incoming, f"{path}.")
+        elif isinstance(current, dict) and isinstance(incoming, dict):
+            changed += _adopt_dict(current, incoming, path)
+        elif current != incoming:
+            setattr(target, f.name, incoming)
+            changed.append(path)
+    return changed
+
+
+def _adopt_dict(target: dict[Any, Any], source: dict[Any, Any], prefix: str) -> list[str]:
+    """Same rules one level down, for maps like ``models.providers``.
+
+    A removed key is a change too: deleting a provider has to reach the router.
+    """
+    changed: list[str] = []
+    for key in list(target):
+        if key not in source:
+            del target[key]
+            changed.append(f"{prefix}.{key}")
+    for key, incoming in source.items():
+        path = f"{prefix}.{key}"
+        current = target.get(key)
+        if dataclasses.is_dataclass(current) and type(current) is type(incoming):
+            changed += _adopt(current, incoming, f"{path}.")
+        elif key not in target or current != incoming:
+            target[key] = incoming
+            changed.append(path)
+    return changed
 
 
 def _coerce_like(current: Any, value: Any) -> Any:

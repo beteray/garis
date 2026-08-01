@@ -155,5 +155,9 @@ class Topic:
     MEMORY_CHANGED = "memory.changed"
     SUBSCRIPTION_ITEM = "subscription.item"
 
+    CONFIG_CHANGED = "config.changed"       # settings changed, with the paths
+    VAULT_CHANGED = "vault.changed"         # a credential appeared, changed or went
+    PROVIDER_HEALTH = "provider.health"     # a provider's state actually moved
+
 
 __all__ = ["DEFAULT_HISTORY", "DEFAULT_QUEUE_SIZE", "Event", "EventBus", "Subscription", "Topic"]

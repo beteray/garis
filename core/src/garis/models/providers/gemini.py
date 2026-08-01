@@ -50,7 +50,10 @@ MODELS: tuple[ModelSpec, ...] = (
     ModelSpec(
         name="gemini-2.5-flash-native-audio-preview",
         provider="gemini",
-        jobs=frozenset({Job.VOICE, Job.CHAT}),
+        # VOICE only. Declaring CHAT as well made this preview model win the
+        # ranking for ordinary typed conversation — measured, and wrong: a
+        # speech-to-speech session is a different modality, not a cheaper chat.
+        jobs=frozenset({Job.VOICE}),
         capabilities=frozenset({Capability.REALTIME_VOICE, Capability.STREAMING,
                                 Capability.TOOLS}),
         quality=0.72, speed=0.96, input_cost=0.5, output_cost=2.0, context_tokens=128_000,
@@ -79,6 +82,12 @@ class GeminiProvider:
 
     def available(self) -> bool:
         return bool(self._key)
+
+    def health_request(self) -> tuple[str, dict[str, str]] | None:
+        """Listing models costs nothing and still proves the key opens the door."""
+        if not self._key:
+            return None
+        return f"{self._base}/models?key={self._key}", {}
 
     def _url(self, model: ModelSpec, method: str) -> str:
         if not self._key:

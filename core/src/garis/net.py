@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import ExecutionError
+from .errors import ExecutionError, NetworkTimeout, NetworkUnreachable
 
 USER_AGENT = "GARIS/0.1 (+https://github.com/beteray/garis)"
 DEFAULT_TIMEOUT = 60.0
@@ -50,6 +50,7 @@ class Response:
                 f"HTTP {self.status} z {self.url}: {self.text[:300]}",
                 # 408/429/5xx are worth another attempt; 4xx generally is not.
                 retryable=self.status in (408, 425, 429) or self.status >= 500,
+                status=self.status,
             )
         return self
 
@@ -90,9 +91,15 @@ class Transport:
             headers = {k.lower(): v for k, v in (exc.headers or {}).items()}
             return Response(exc.code, headers, raw, request.url)
         except urllib.error.URLError as exc:
-            raise ExecutionError(f"Brak połączenia z {request.url}: {exc.reason}") from exc
+            # urllib wraps a socket timeout in URLError rather than letting it out,
+            # so the distinction has to be recovered from the reason.
+            if isinstance(exc.reason, TimeoutError):
+                raise NetworkTimeout(f"Przekroczono czas oczekiwania: {request.url}") from exc
+            raise NetworkUnreachable(
+                f"Brak połączenia z {request.url}: {exc.reason}"
+            ) from exc
         except TimeoutError as exc:
-            raise ExecutionError(f"Przekroczono czas oczekiwania: {request.url}") from exc
+            raise NetworkTimeout(f"Przekroczono czas oczekiwania: {request.url}") from exc
 
     def stream(self, request: Request) -> Iterator[bytes]:
         """Yield response lines as they arrive — used for SSE token streaming."""
@@ -110,9 +117,14 @@ class Transport:
             raise ExecutionError(
                 f"HTTP {exc.code} z {request.url}: {exc.read()[:300]!r}",
                 retryable=exc.code in (408, 425, 429) or exc.code >= 500,
+                status=exc.code,
             ) from exc
         except urllib.error.URLError as exc:
-            raise ExecutionError(f"Brak połączenia z {request.url}: {exc.reason}") from exc
+            if isinstance(exc.reason, TimeoutError):
+                raise NetworkTimeout(f"Przekroczono czas oczekiwania: {request.url}") from exc
+            raise NetworkUnreachable(
+                f"Brak połączenia z {request.url}: {exc.reason}"
+            ) from exc
 
 
 class HttpClient:

@@ -18,6 +18,7 @@ from typing import Any
 
 from .crypto import SecretBox
 from .errors import StoreError
+from .events import EventBus, Topic
 from .store import VAULT_SCHEMA, Database
 
 REF_PREFIX = "vault://"
@@ -57,13 +58,17 @@ def ref_name(value: str) -> str:
 
 
 class Vault:
-    def __init__(self, db: Database, box: SecretBox) -> None:
+    def __init__(self, db: Database, box: SecretBox, *, bus: EventBus | None = None) -> None:
         self.db = db
         self._box = box
+        # Announcing writes is what lets a saved API key take effect without a
+        # restart: the provider pool listens here. Only the *name* is published —
+        # a value in an event is a value in every subscriber's log.
+        self.bus = bus
 
     @classmethod
-    def open(cls, path: Any, box: SecretBox) -> Vault:
-        return cls(Database(path, VAULT_SCHEMA), box)
+    def open(cls, path: Any, box: SecretBox, *, bus: EventBus | None = None) -> Vault:
+        return cls(Database(path, VAULT_SCHEMA), box, bus=bus)
 
     # ------------------------------------------------------------------- write
 
@@ -82,11 +87,16 @@ class Vault:
         info = self.info(name)
         if info is None:  # pragma: no cover - only if the row vanished mid-write
             raise StoreError(f"Nie udało się zapisać sekretu {name!r}")
+        self._announce("set", name)
         return info
 
     def delete(self, name: str) -> bool:
-        cur = self.db.execute("DELETE FROM secrets WHERE name = ?", (_clean(name),))
-        return bool(cur.rowcount)
+        name = _clean(name)
+        cur = self.db.execute("DELETE FROM secrets WHERE name = ?", (name,))
+        deleted = bool(cur.rowcount)
+        if deleted:
+            self._announce("deleted", name)
+        return deleted
 
     def rename(self, old: str, new: str) -> None:
         value = self.get(old)
@@ -94,6 +104,10 @@ class Vault:
         self.set(new, value, kind=current.kind if current else "token",
                  note=current.note if current else "")
         self.delete(old)
+
+    def _announce(self, action: str, name: str) -> None:
+        if self.bus is not None:
+            self.bus.emit(Topic.VAULT_CHANGED, name=name, action=action)
 
     # -------------------------------------------------------------------- read
 

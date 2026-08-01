@@ -34,17 +34,23 @@ powstawać.
 
 ---
 
-## M1 — Prawda o stanie · **P0**
+## M1 — Prawda o stanie · **P0** · silnik zrobiony
 
 Naprawa trzech zmierzonych błędów, które sprawiają, że produkt kłamie.
 
-- Router przeładowuje dostawców po zmianie w sejfie, bez restartu silnika.
-- Stan dostawcy przestaje wynikać z obecności klucza (patrz M4).
-- Zadania nie mogą utknąć: timeouty na wszystkich stanach czekających.
-- `port-taken` jako osobny stan połączenia.
+- ✅ Router przeładowuje dostawców po zmianie w sejfie, bez restartu silnika.
+- ✅ Stan dostawcy przestaje wynikać z obecności klucza (patrz M4).
+- ✅ Ustawienia zmieniają się na żywo: `SettingsService`, walidacja na kopii,
+  zdarzenie `config.changed`, obserwator pliku dla ręcznych edycji.
+- ⏳ Zadania nie mogą utknąć: timeouty na wszystkich stanach czekających. **To
+  jest część M3** (czternaście stanów) i nie zostało tknięte.
+- ⏳ `port-taken` jako osobny stan połączenia — powłoka + UI, nie silnik.
 
 **Ukończone, gdy:** test end-to-end zapisuje klucz przez API i **bez restartu**
-zleca zadanie, które kończy się wynikiem. Ten test dziś by nie przeszedł.
+zleca zadanie, które kończy się wynikiem.
+→ `tests/test_reload.py::test_a_task_submitted_after_saving_a_key_finishes_on_that_provider`.
+Idzie przez prawdziwy adapter Gemini, prawdziwy router i prawdziwy planer;
+podmieniony jest wyłącznie transport HTTP.
 
 ## M2 — Klasyfikator intencji · **P0**
 
@@ -67,15 +73,24 @@ Pobrane" tworzy. Test na obu.
 **Ukończone, gdy:** żaden stan nie wyświetla się jako „czekam na Ciebie" bez
 konkretnego pytania, a każde zadanie da się anulować i wznowić.
 
-## M4 — Dostawcy i router · **P0**
+## M4 — Dostawcy i router · **P0** · silnik zrobiony
 
-- Dziewięć stanów dostawcy, health check przy zapisie, starcie i co godzinę.
-- Modalność i status `preview` w kryteriach routingu — naprawa zmierzonego
-  błędu, w którym model audio wygrywał ranking na czat.
-- Zero komend CLI w interfejsie; przycisk „Otwórz ustawienia modeli".
+- ✅ Siedem statusów silnika (dziewięć stanów produktowych mapuje się na nie —
+  `docs/STATE_MACHINES.md` §3), health check przy zapisie, starcie i co godzinę.
+- ✅ Powód niedostępności dociera do użytkownika: `reason` w API, w `NoModelAvailable`
+  i w `garis doctor`.
+- ✅ Router wybiera tylko sprawnych dostawców; awaria w trakcie pracy natychmiast
+  aktualizuje stan.
+- ✅ Modalność w kryteriach routingu — modele natywnego audio nie deklarują już
+  `Job.CHAT`, więc nie wygrywają rankingu na pisaną rozmowę.
+- ⏳ Status `preview` i preferencja użytkownika jako kryteria.
+- ⏳ Zero komend CLI w interfejsie; przycisk „Otwórz ustawienia modeli" — UI.
 
 **Ukończone, gdy:** nieprawidłowy klucz pokazuje „Klucz odrzucony przez
 dostawcę" w ciągu kilku sekund od zapisania, a nie przy pierwszym zadaniu.
+→ `tests/test_reload.py::test_an_invalid_key_says_so_within_seconds_of_being_saved`.
+Odpowiedź na `POST /api/vault` niesie już zmierzony stan; ekran, który to
+pokaże, jest do zrobienia.
 
 ## M5 — Onboarding jako pierwsze spotkanie · **P1**
 

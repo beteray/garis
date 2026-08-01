@@ -30,13 +30,18 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → policy → zgoda → dzierżawa → wykonanie → audyt` | ✅ | 249 testów |
+| Runtime: `resolve → policy → zgoda → dzierżawa → wykonanie → audyt` | ✅ | 298 testów |
 | Bramki zgody (płatność, publikacja, wiadomość, poświadczenia, trwałe usunięcie) | ✅ | `test_policy.py` |
 | Osobowość nie ma dostępu do `PolicyEngine` | ✅ | test strukturalny na sygnaturze |
 | Pamięć szyfrowana w spoczynku | ✅ | `test_memory.py` czyta surowy plik |
 | Sejf + podstawianie `vault://` w chwili wywołania | ✅ | `test_executor.py` |
 | Wznawianie zadań po restarcie | ✅ | `test_tasks_resume.py` |
 | Router modeli + łańcuch zapasowy | ✅ | `test_router.py` |
+| Stan dostawcy mierzony, nie zakładany (7 statusów) | ✅ | `test_provider_health.py` |
+| Klucz zapisany przez API działa bez restartu | ✅ | `test_reload.py` — zadanie kończy się wynikiem |
+| Nieprawidłowy klucz zgłasza się przy zapisie, nie w środku zadania | ✅ | `test_reload.py` |
+| Ustawienia zmieniane na żywo, atomowo, ze zdarzeniem | ✅ | `test_reload.py` |
+| Health check przeciw **prawdziwym** dostawcom (OpenAI/Anthropic/Gemini) | ❔ | klasyfikacja przetestowana na atrapie transportu; żaden prawdziwy klucz nie był użyty |
 | Pętla agenta na atrapie modelu | ✅ | `test_agent_loop.py` |
 | Brama powiadomień (cisza, gra, duplikaty, limit) | ✅ | `test_notifications.py` |
 | Warstwa decyzyjna głosu (stany, słowo aktywacyjne, kalibracja) | ✅ | `test_voice.py` |
@@ -45,7 +50,25 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | **Narzędzia Windows** (rejestr, firewall, usługi, ekran, mysz, winget) | ❔ | deklarują platformę; nigdy nie wykonane na Windows |
 | Audio (mikrofon, głośniki, STT, TTS) | ❌ | nie istnieje — etap 3 |
 
-Weryfikacja: `pytest` 249 zielonych · `ruff` czysto · `mypy` czysto (60 plików).
+Weryfikacja: `pytest` 298 zielonych · `ruff` czysto · `mypy` czysto (63 pliki).
+
+**Przeładowanie i zdrowie dostawców sprawdzone też na żywo**, nie tylko testami:
+uruchomiony `garis serve`, prawdziwe gniazda, atrapa Gemini na `127.0.0.1`
+odpowiadająca 400 na zły klucz i 200 na dobry. Przebieg, bez ani jednego
+restartu silnika:
+
+1. przed zapisaniem klucza widoczna wyłącznie wbudowana atrapa,
+2. `POST /api/vault` ze złym kluczem → `invalid_key`, „Klucz odrzucony przez
+   dostawcę." **w odpowiedzi na zapis**,
+3. zadanie zlecone przy złym kluczu kończy się przez wbudowany fallback zamiast
+   umierać,
+4. poprawiony klucz → `online`, 3,4 ms, natychmiast,
+5. `PATCH /api/config` widoczny w `/api/state` od razu,
+6. `config.json` **edytowany ręcznie z zewnątrz** dotarł do silnika w ~2 s.
+
+Czego to nie dowodzi: że treść odpowiedzi prawdziwego OpenAI, Anthropica i
+Google mapuje się tak, jak zakłada `classify_response`. Kody HTTP owszem,
+komunikaty w ciele — nie sprawdzone na żadnym prawdziwym kluczu.
 
 ## Interfejs (React/TypeScript)
 

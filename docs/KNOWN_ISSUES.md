@@ -4,6 +4,30 @@ Kolejność: najpierw to, co blokuje.
 
 ---
 
+## 0a. ~~Klucz nie działa do restartu~~ · ~~Nieprawidłowy klucz udaje sprawny~~ — NAPRAWIONE
+
+Dwa z trzech błędów P0 audytu (`docs/AUDIT.md` P0-1 i P0-3), oba w silniku, oba
+zamknięte testem, który wcześniej by nie przeszedł:
+
+- zapis do sejfu ogłasza zmianę, `ProviderPool` przebudowuje dostawców i sprawdza
+  ich, a `POST /api/vault` **czeka** na wynik i zwraca go w odpowiedzi;
+- „dostępny" znaczy teraz „router tam pośle pracę" i wynika z odpowiedzi
+  dostawcy, nie z obecności klucza w sejfie.
+
+Zostaje **P0-2** (powitanie staje się wiecznym zadaniem) — to milestone M2,
+klasyfikator intencji, nietknięty.
+
+Czego to nie obejmuje: interfejsu. API niesie już `status` i `reason` dla każdego
+dostawcy, ale ekran ustawień nadal pokazuje stan sejfu, nie stan dostawcy.
+Zamiana `available` na siedem statusów po stronie okna jest do zrobienia.
+
+Sprawdzone na atrapie transportu HTTP, **nie na prawdziwych kluczach** — treść
+odpowiedzi 400/401/429 u OpenAI, Anthropic i Google jest odwzorowana z
+dokumentacji, nie zmierzona. Pierwszy prawdziwy klucz może wymagać poprawki
+w `classify_response`.
+
+---
+
 ## 0. Test na Windows 11 (pierwszy prawdziwy) — przyczyna znaleziona i naprawiona
 
 Zgłoszone objawy: martwe przyciski, brak zapisu klucza Gemini, wieczne
@@ -104,8 +128,10 @@ Uczciwie, żeby nie wyglądało na skończone:
   `data-quiet="true"` i `data-theme` działają, brakuje ekranu, który je ustawia.
 - **Skalowanie Windows 125/150/175%** — nie do sprawdzenia w Chromium na
   Linuksie.
-- **Zadanie end-to-end z prawdziwym modelem** — klucz zapisuje się, ale nie
-  zlecałem zadania na żywym dostawcy.
+- **Zadanie end-to-end z prawdziwym modelem** — ścieżka „zapisz klucz → zleć
+  zadanie → wynik" jest teraz pokryta testem przez prawdziwy adapter Gemini, ale
+  z podmienionym transportem HTTP. Na **żywym** dostawcy nadal nie zlecałem
+  zadania.
 
 ## 6. Drobne
 

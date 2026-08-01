@@ -25,6 +25,8 @@ from .base import (
     Usage,
     parse_json_lenient,
 )
+from .health import HealthMonitor, ProviderHealth, ProviderStatus
+from .pool import ProviderPool
 from .providers import (
     AnthropicProvider,
     FakeProvider,
@@ -124,9 +126,10 @@ def build_router(
     http: HttpClient | None = None,
     bus: EventBus | None = None,
     include_fake: bool = False,
+    health: HealthMonitor | None = None,
 ) -> ModelRouter:
     providers = build_providers(config, vault=vault, http=http, include_fake=include_fake)
-    return ModelRouter(providers, config.models, bus=bus)
+    return ModelRouter(providers, config.models, bus=bus, health=health)
 
 
 __all__ = [
@@ -137,6 +140,7 @@ __all__ = [
     "Completion",
     "FakeProvider",
     "GeminiProvider",
+    "HealthMonitor",
     "Job",
     "Message",
     "ModelRouter",
@@ -146,6 +150,9 @@ __all__ = [
     "OpenAIProvider",
     "Privacy",
     "Provider",
+    "ProviderHealth",
+    "ProviderPool",
+    "ProviderStatus",
     "Role",
     "ToolCall",
     "Usage",
