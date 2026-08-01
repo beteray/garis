@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "garis-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "GARIS — autonomous personal AI agent runtime (outcome-driven, Windows 11 first)"
 readme = "README.md"
 requires-python = ">=3.11"

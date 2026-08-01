@@ -34,7 +34,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (298 testów). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (309 testów). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 ```
@@ -64,7 +64,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 298 passed
+.venv/bin/python -m pytest -q                 # 309 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -266,6 +266,16 @@ Zapisane, żeby nie wpaść drugi raz:
 - **Model natywnego audio deklarował `Job.CHAT`** i wygrywał ranking na pisaną
   rozmowę, bo jest szybki i tani. Katalog musi rozróżniać modalność: sesja
   mowa-w-mowę nie jest tańszym czatem.
+- **Ranking to zła kolejność na awarie.** `ranked[:max_attempts]` brało trzy
+  najlepsze **modele**, a nie trzech różnych **dostawców** — a trzy najlepsze
+  modele to zwykle dwa albo trzy modele tego samego producenta. Zmierzone na
+  prawdziwych katalogach: przy trzech kluczach chmurowych i `quality_first`
+  **sześć z dziewięciu zadań** stawiało drugi model jednego dostawcy przed
+  dostawcą, którego nie spróbowano ani razu. Gdy to właśnie ten producent leży,
+  wszystkie ponowienia pukają do tych samych zamkniętych drzwi. `spread()`
+  układa próby wszerz: najlepszy model każdego dostawcy, potem drugi każdego.
+  Budżet prób jest **nie mniejszy niż liczba dostawców** — inaczej niezmiennik
+  kolejności i tak nie dowozi czwartego dostawcy.
 
 ## Etap 2 — co zrobione, co zostało
 
@@ -291,7 +301,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 298 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 309 testów, musi być zielone
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

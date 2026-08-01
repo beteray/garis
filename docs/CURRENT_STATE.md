@@ -30,7 +30,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → policy → zgoda → dzierżawa → wykonanie → audyt` | ✅ | 298 testów |
+| Runtime: `resolve → policy → zgoda → dzierżawa → wykonanie → audyt` | ✅ | 309 testów |
 | Bramki zgody (płatność, publikacja, wiadomość, poświadczenia, trwałe usunięcie) | ✅ | `test_policy.py` |
 | Osobowość nie ma dostępu do `PolicyEngine` | ✅ | test strukturalny na sygnaturze |
 | Pamięć szyfrowana w spoczynku | ✅ | `test_memory.py` czyta surowy plik |
@@ -50,7 +50,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | **Narzędzia Windows** (rejestr, firewall, usługi, ekran, mysz, winget) | ❔ | deklarują platformę; nigdy nie wykonane na Windows |
 | Audio (mikrofon, głośniki, STT, TTS) | ❌ | nie istnieje — etap 3 |
 
-Weryfikacja: `pytest` 298 zielonych · `ruff` czysto · `mypy` czysto (63 pliki).
+Weryfikacja: `pytest` 309 zielonych · `ruff` czysto · `mypy` czysto (63 pliki).
 
 **Przeładowanie i zdrowie dostawców sprawdzone też na żywo**, nie tylko testami:
 uruchomiony `garis serve`, prawdziwe gniazda, atrapa Gemini na `127.0.0.1`

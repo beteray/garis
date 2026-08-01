@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from itertools import zip_longest
 from typing import Any
 
 from ..config import ModelsConfig
@@ -167,6 +168,28 @@ class ModelRouter:
         out.sort(key=lambda c: (-c.score, c.model.name))
         return out
 
+    def spread(self, ranked: Sequence[Choice]) -> list[Choice]:
+        """Reorder a ranking so every distinct provider is tried before any repeat.
+
+        Ranking alone is the wrong order to fail through. The top three models for
+        a job are frequently two or three models from the *same* vendor — measured:
+        with three cloud keys and ``quality_first``, six of nine jobs put a second
+        model from one provider ahead of a provider never tried at all. When that
+        vendor is the one that is down, out of credit or holding a rejected key,
+        the retries all land on the same broken door while a working provider
+        stands untouched.
+
+        So: best model of each provider first, in rank order, then second-best of
+        each, and so on. Within one provider the ranking is preserved.
+        """
+        by_provider: dict[str, list[Choice]] = {}
+        for choice in ranked:
+            by_provider.setdefault(choice.provider.name, []).append(choice)
+        out: list[Choice] = []
+        for round_ in zip_longest(*by_provider.values()):
+            out.extend(choice for choice in round_ if choice is not None)
+        return out
+
     def select(self, need: Need) -> Choice:
         found = self.candidates(need)
         if not found:
@@ -212,10 +235,12 @@ class ModelRouter:
         timeout: float = 120.0,
         max_attempts: int = 3,
     ) -> Completion:
-        """Complete with automatic fallback.
+        """Complete with automatic fallback across *providers*, not just models.
 
-        A provider failure is GARIS's problem, not the user's: try the next best
-        model rather than surfacing "OpenAI returned 503".
+        A provider failure is GARIS's problem, not the user's: try another model
+        rather than surfacing "OpenAI returned 503". The attempt budget is at
+        least one per distinct provider, because the point of having a second
+        vendor configured is that the first one being down does not end the task.
         """
         ranked = self.candidates(need)
         if not ranked:
@@ -224,8 +249,16 @@ class ModelRouter:
                 user_message=self._no_model_sentence(),
             )
 
+        order = self.spread(ranked)
+        # Never fewer attempts than there are providers to try: three attempts
+        # spent inside one vendor while a healthy one is never called is exactly
+        # the failure this ordering exists to prevent.
+        attempts = max(max_attempts, len({choice.provider.name for choice in ranked}))
+
         errors: list[str] = []
-        for choice in ranked[:max_attempts]:
+        attempted: list[str] = []
+        for choice in order[:attempts]:
+            attempted.append(choice.provider.name)
             if json_mode and Capability.JSON_MODE not in choice.model.capabilities:
                 json_mode_for_call = False
             else:
@@ -252,8 +285,17 @@ class ModelRouter:
             self._record(completion)
             return completion
 
+        # Name every provider that was actually called. "All providers failed" is
+        # not diagnosable; "openai, gemini and anthropic were each tried, here is
+        # what each said" is.
+        tried = sorted(set(attempted))
         raise NoModelAvailable(
-            "Wszyscy dostawcy zawiedli: " + "; ".join(errors),
+            f"Wszyscy dostawcy zawiedli (próbowani: {', '.join(tried)}): "
+            + "; ".join(errors),
+            user_message=(
+                f"Żaden z dostawców nie odpowiedział ({', '.join(tried)}). "
+                "Spróbuję ponownie później."
+            ),
         )
 
     async def stream(
