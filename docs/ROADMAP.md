@@ -1,128 +1,192 @@
-# Roadmapa
+# Roadmapa — kolejność, zależności, definicja ukończenia
 
-Etapami, ale celem jest pełny GARIS — nie demonstracja otwierająca Notatnik.
-Każdy etap ma kryteria ukończenia, które da się sprawdzić, a nie ocenić.
+Zastępuje roadmapę etapów 1–8 (zachowaną w `ROADMAP_ETAPY_1_8.md`).
+Podstawa: `docs/AUDIT.md`.
 
-## Etap 1 — silnik ✅ ukończony
+**Zasada porządkująca:** nie budujemy nic nowego, dopóki to, co istnieje, nie
+działa dla kogoś innego niż autor. Głos pozostaje zablokowany.
 
-Rdzeń, który działa i jest przetestowany. Bez GUI, na modelach chmurowych.
+---
 
-- kontrolowana ścieżka wykonania: rejestr, polityka, zgody, dzierżawy, audyt
-- pamięć szyfrowana + sejf poświadczeń
-- router modeli (OpenAI / Claude / Gemini / Ollama jako slot / atrapa)
-- 53 narzędzia: pliki, PowerShell, procesy, usługi, rejestr, sieć, firewall,
-  pakiety, ekran, mysz, klawiatura, schowek, okna, web, zdalne hosty, pamięć, sejf
-- pętla agenta: plan → wykonaj → sprawdź → napraw → raport
-- trwałe zadania: dziennik kroków, wznawianie po restarcie, współbieżność
-- CLI: `do`, `tasks`, `task`, `stop`, `approvals`, `approve`, `reject`, `memory`,
-  `vault`, `doctor`, `activity`, `tools`, `config`, `serve`
-- 249 testy, zielone
+## Kolejność zależności
 
-**Kryteria spełnione:** zadanie zablokowane na płatności wznawia się po symulowanym
-restarcie bez powtarzania wykonanych kroków; pamięć nie zostawia jawnego tekstu w
-pliku bazy ani w WAL; osobowość nie ma ścieżki do polityki.
+Strzałka znaczy „nie ma sensu zaczynać przed".
 
-## Etap 2 — GUI (Tauri 2) 🔄 w toku
+```
+M1 Prawda o stanie ──┬──► M2 Klasyfikator ──► M3 Zadania
+                     │
+                     └──► M4 Dostawcy ──────► M5 Onboarding ──► M6 Checkpoint
+                                                                     │
+M7 Nazwy ludzkie ────────────────────────────────────────────────────┤
+M8 Ustawienia + personalizacja ──────────────────────────────────────┤
+M9 System wizualny ──────────────────────────────────────────────────┤
+M10 Dostępność ──────────────────────────────────────────────────────┤
+M11 Wydajność ───────────────────────────────────────────────────────┤
+                                                                     ▼
+                                                          M12 Beta → M13 Głos
+```
 
-Aplikacja, która wygląda jak część systemu. Wymagania wizualne: `docs/UI.md` —
-Liquid Glass, framer-motion, **wszystko animowane**, animowana kula ze stanami.
+Dlaczego tak: **M1 i M4 są warunkiem wszystkiego.** Dopóki dodanie klucza nie
+działa bez restartu, a nieprawidłowy klucz raportuje się jako sprawny, każdy test
+produktu bada nieprawdę. Klasyfikator (M2) musi być przed pracą nad zadaniami
+(M3), bo inaczej projektujemy stany dla obiektów, które w ogóle nie powinny
+powstawać.
 
-- ✅ lokalne API HTTP+WebSocket jako kontrakt między rdzeniem a UI (`docs/API.md`)
-- ✅ kula WebGL: sześć stanów, morfowanie między nimi, reakcja na mikrofon,
-  fallback 2D, pauza renderu przy ukrytym oknie
-- ✅ ekrany: główny, rozmowa, zadania, pamięć + sejf, urządzenia, subskrypcje,
-  ustawienia, diagnostyka
-- ✅ karty zgód: skutki nazwane po polsku, animowane potwierdzenie decyzji
-- ✅ onboarding jako rozmowa, nie formularz
-- ✅ powłoka Tauri 2 napisana: tray, hide-on-close, Mica, autostart, skrót globalny
-- ⏳ **kompilacja powłoki na Windows 11** — jedyne, czego nie dało się zrobić
-  w środowisku bez Windows i bez webkit2gtk
-- ⏳ ikony, instalator MSI/NSIS, podpis
+---
 
-**Kryteria:** 60 fps przy 20 zadaniach; okno zamknięte → zadanie dalej kończy się
-i pojawia w powiadomieniu; `prefers-reduced-motion` respektowane; pełna obsługa
-klawiaturą.
+## M1 — Prawda o stanie · **P0**
 
-## Etap 3 — głos 🔄 w toku
+Naprawa trzech zmierzonych błędów, które sprawiają, że produkt kłamie.
 
-Decyzje są zrobione i przetestowane; brakuje sprzętu pod spodem.
+- Router przeładowuje dostawców po zmianie w sejfie, bez restartu silnika.
+- Stan dostawcy przestaje wynikać z obecności klucza (patrz M4).
+- Zadania nie mogą utknąć: timeouty na wszystkich stanach czekających.
+- `port-taken` jako osobny stan połączenia.
 
-- ✅ maszyna stanów rozmowy: przerywanie (barge-in) z progiem czasu, koniec tury
-  po ciszy, okno po słowie aktywacyjnym, push-to-talk, utrzymanie głosu po
-  odpowiedzi
-- ✅ słowo aktywacyjne: dopasowanie odporne na przekręcenia rozpoznawania,
-  zmienialne w locie, ignoruje mówienie *o* GARIS-ie zamiast *do* niego
-- ✅ kalibracja hałasu: próg wyprowadzany z percentyla szumu pokoju, wykrywanie
-  głośnego pomieszczenia
-- ✅ wybór drogi: realtime dostawcy / lokalnie / brak — z prywatnością i brakiem
-  sieci jako twardymi warunkami
-- ✅ wybór mikrofonu i głośników z fallbackiem, gdy urządzenie zniknie
-- ✅ bramka powiadomień: godziny ciszy, tryb gry, próg ważności, duplikaty, limit
-- ⏳ realne wejście/wyjście audio (sounddevice/WASAPI)
-- ⏳ silnik wake word na urządzeniu (openWakeWord) i pobieranie modelu
-- ⏳ podłączenie faster-whisper + Piper oraz sesji realtime dostawcy
-- ⏳ panel głosu w interfejsie: wybór urządzeń, kreator kalibracji, wybór głosu
+**Ukończone, gdy:** test end-to-end zapisuje klucz przez API i **bez restartu**
+zleca zadanie, które kończy się wynikiem. Ten test dziś by nie przeszedł.
 
-**Kryteria:** przerwanie w trakcie mówienia zatrzymuje TTS w ≤200 ms; wake word
-działa offline; brak sieci → rozmowa nadal możliwa lokalnie.
+## M2 — Klasyfikator intencji · **P0**
 
-## Etap 4 — Windows na serio
+- Dziesięć klas z `docs/STATE_MACHINES.md` §4.
+- Przypadki oczywiste (powitanie, podziękowanie, potwierdzenie) rozstrzygane
+  **bez modelu chmurowego**.
+- Zadanie powstaje tylko wtedy, gdy jest co śledzić.
 
-Ścieżki natywne przetestowane na Windows 11, nie tylko zadeklarowane.
+**Ukończone, gdy:** „witaj", „dzięki", „ok" nie tworzą zadania; „posprzątaj
+Pobrane" tworzy. Test na obu.
 
-- rejestr, usługi, firewall, UAC, winget, sterowanie ekranem i wejściem
-- **CI na `windows-latest`** — od tego etapu obowiązkowe
-- instalator (MSI/NSIS), podpis, aktualizacje
+## M3 — Zadania, które mówią, czego chcą · **P0/P1**
 
-**Kryteria:** zestaw testów zielony na Windows; `garis doctor` nie zgłasza
-niedostępnych narzędzi na czystej instalacji Windows 11.
+- Czternaście stanów zamiast sześciu.
+- Przejścia z powodem, czasem, aktorem i zdaniem dla użytkownika.
+- `waiting_input` bez pytania = błąd programu.
+- Ekran zadania wg `docs/IA_AND_DESIGN.md`.
+- Anuluj / wstrzymaj / wznów działają naprawdę.
 
-## Etap 5 — GARIS Server
+**Ukończone, gdy:** żaden stan nie wyświetla się jako „czekam na Ciebie" bez
+konkretnego pytania, a każde zadanie da się anulować i wznowić.
 
-- instalator dla Linuksa, usługa systemd, kanał desktop↔serwer z tokenem
-- narzędzia: Docker, usługi, sieć, kopie zapasowe, aktualizacje
-- `sudo` przez kontrolowane narzędzia, pełny audyt
+## M4 — Dostawcy i router · **P0**
 
-**Kryteria:** „zainstaluj na serwerze nową usługę i skonfiguruj ją" z desktopa
-kończy się działającą usługą, przetestowaną przez agenta serwerowego, z raportem
-i śladem audytu na obu maszynach.
+- Dziewięć stanów dostawcy, health check przy zapisie, starcie i co godzinę.
+- Modalność i status `preview` w kryteriach routingu — naprawa zmierzonego
+  błędu, w którym model audio wygrywał ranking na czat.
+- Zero komend CLI w interfejsie; przycisk „Otwórz ustawienia modeli".
 
-## Etap 6 — subskrypcje, briefing, proaktywność
+**Ukończone, gdy:** nieprawidłowy klucz pokazuje „Klucz odrzucony przez
+dostawcę" w ciągu kilku sekund od zapisania, a nie przy pierwszym zadaniu.
 
-- subskrypcje dowolnych zainteresowań, realne źródła, ocena istotności
-- filtr szumu, godziny ciszy, wyciszenie podczas grania
-- briefing po starcie systemu
-- zauważanie powtarzalnych czynności i propozycje automatyzacji
-- wykrywanie problemów z komputerem i serwerem
+## M5 — Onboarding jako pierwsze spotkanie · **P1**
 
-**Kryteria:** dzień pracy bez ani jednego nieistotnego powiadomienia; briefing
-mówi tylko o rzeczach, które zmieniły się od ostatniego razu.
+- Progresywnie, z jasnym podziałem: wymagane / zalecane / opcjonalne.
+- Każdy krok nieistotny da się pominąć.
+- Na końcu **prawdziwy test**: połączenie z runtime, walidacja dostawcy, krótka
+  rozmowa, proste zadanie tylko-do-odczytu, test powiadomienia.
 
-## Etap 7 — GARIS Mobile
+**Ukończone, gdy:** ktoś, kto nigdy nie widział GARIS-a, dochodzi od instalatora
+do wykonanego zadania bez pytania autora o cokolwiek.
 
-Pilot, nie druga aplikacja: rozmowa, zlecanie zadań komputerowi i serwerowi,
-postęp, odbiór rezultatów, **zatwierdzanie zgód**, zatrzymywanie zadań.
+## M6 — Checkpoint Windows · **P0**
 
-**Kryteria:** zgoda zatwierdzona z telefonu odblokowuje zadanie na komputerze;
-działa przy komputerze w innej sieci.
+Wszystko z `docs/WINDOWS_CHECKPOINT.md` po naprawach M1–M5. To jedyny moment,
+w którym „skompilowane" zamienia się w „działa": tray, Mica, `Ctrl+Alt+G`,
+autostart, job object, skalowanie DPI, cykl życia.
 
-## Etap 8 — otwarcie ekosystemu
+**Ukończone, gdy:** cała lista ręczna odhaczona na prawdziwej maszynie.
 
-- modele lokalne (Ollama) jako pełnoprawna ścieżka
-- **dostawca zgodny z API OpenAI** (LM Studio, vLLM, Groq, OpenRouter,
-  llama.cpp) — jeden plik, ogromny zasięg
-- klient MCP, pluginy, integracje: poczta, kalendarz, wiadomości
-- publiczny, udokumentowany kontrakt `ToolSpec` dla wtyczek zewnętrznych
+## M7 — Nazwy ludzkie · **P1**
 
-**Kryteria:** zewnętrzna osoba dodaje działające narzędzie bez zmiany kodu rdzenia,
-opierając się wyłącznie na `docs/TOOLS.md`.
+- Warstwa nazw: `Klucz Gemini` zamiast `gemini_api_key` i `vault://…`.
+- Rozdzielenie siedmiu rodzajów danych wg `docs/PRODUCT.md`.
+- Pamięć: powód zapamiętania + klasyfikacja wrażliwości.
+- Cztery pytania o pamięć odpowiadalne.
 
-## Rzeczy przyjęte do zrobienia, bez etapu
+**Ukończone, gdy:** w interfejsie poza trybem developerskim nie pada ani jeden
+identyfikator techniczny. Test sprawdza to na zrzucie tekstu wszystkich ekranów.
 
-- **Audyt odporny na manipulację** — łańcuch skrótów wiążący każdy wiersz z
-  poprzednim. Dla agenta z dostępem do shella i płatności dowód, że dziennik nie
-  został po cichu zmieniony (również przez samego GARIS-a), jest realną wartością.
-- **Tryb „pokaż, co zrobisz"** — `garis do --dry-run` już istnieje; ma trafić do
-  GUI jako pełnoprawna funkcja, nie flaga debugowania.
-- Rotacja klucza głównego i eksport/import stanu.
-- Limity budżetu per zadanie, nie tylko miesięczne.
+## M8 — Ustawienia i personalizacja · **P2**
+
+- Dwanaście kategorii.
+- Profil użytkownika z `docs/PRODUCT.md`, ze źródłem każdego pola.
+- Adaptacja obserwowana: widoczna, odrzucalna pojedynczo, wyłączalna globalnie.
+- **Najpierw usunąć martwe przełączniki głosu** — to jest P1 i idzie wcześniej.
+
+**Ukończone, gdy:** każde widoczne ustawienie zmienia zachowanie albo jest
+oznaczone jako niedostępne. Test przechodzi po wszystkich kontrolkach.
+
+## M9 — System wizualny · **P2/P3**
+
+- Osiem materiałów zamiast jednej klasy `.glass`.
+- Tokeny semantyczne.
+- Kula rozróżnia dwanaście stanów, nie tylko kolorem.
+- Wygląda dobrze przy wyłączonych efektach.
+
+## M10 — Dostępność · **P2**
+
+Lista kontrolna z `docs/IA_AND_DESIGN.md`. Dziś spełniony jeden punkt z dziesięciu.
+
+## M11 — Wydajność · **P2**
+
+Budżety zmierzone na Windows. Redukcja efektów przy zminimalizowaniu, w tray-u,
+w trybie gry, na baterii, na pulpicie zdalnym. Kula przestaje renderować
+niewidoczna.
+
+## M12 — Beta: dystrybucja i zaufanie · **P2**
+
+- Kanały: developer / preview / stable.
+- Podpisane instalatory, sprawdzanie aktualizacji, notatki, wycofanie.
+- **Migracja ustawień, pamięci i sejfu** między wersjami — bez tego pierwsza
+  aktualizacja kasuje ludziom dane.
+- Prywatność wprost: co zostaje lokalnie, co idzie do dostawcy, co jest logowane,
+  jak sekrety są redagowane, jak wyeksportować i skasować wszystko.
+- **Zero telemetrii bez wyraźnej zgody.**
+
+## M13 — Głos · **Później**
+
+Odblokowany dopiero, gdy: przyciski działają · runtime się łączy · klucz da się
+zapisać i zwalidować · proste zadanie kończy się wynikiem · resize działa ·
+podstawowe ustawienia są funkcjonalne.
+
+Kolejność wewnątrz: urządzenia → przechwytywanie → poziomy RMS/peak →
+kalibracja → push-to-talk → STT → TTS → przerwanie → integracja z runtime →
+panel konfiguracji.
+
+---
+
+## Testy przepływów — przekrojowe, nie osobny etap
+
+Dochodzą razem z milestone'ami, których dotyczą. Osiemnaście scenariuszy:
+instalacja · onboarding · zapis klucza · walidacja · powitanie · pytanie
+faktograficzne · zadanie lokalne · zadanie długie · anulowanie · zadanie
+wymagające doprecyzowania · zadanie wymagające zgody · awaria runtime · awaria
+dostawcy · ponowne połączenie · restart · cykl tray · aktualizacja ·
+odinstalowanie.
+
+Regresja wizualna: rozmiary okna · motywy · skalowanie · stany błędu · stany
+puste · długi tekst polski i angielski.
+
+**Warunek jakości:** wszystkie trzy błędy P0 z audytu przeszłyby dzisiejszy
+zestaw 249 testów na zielono. Testy jednostkowe nie wystarczą.
+
+---
+
+## Plan migracji z obecnej alfy
+
+1. Wersjonowanie schematu bazy stanu i sejfu **przed** pierwszą zmianą modelu
+   danych. Migracje istnieją w `store.py`, ale nikt ich nie ćwiczył.
+2. Stare stany zadań mapują się na nowe: `pending→received`, `running→executing`,
+   `blocked→waiting_input` (z pustym pytaniem, oznaczone do uzupełnienia),
+   `finished→completed`, `failed→failed`, `stopped→cancelled`.
+3. Sekrety zachowują nazwy techniczne; warstwa nazw ludzkich jest dodawana obok,
+   nie zamiast — istniejące sejfy działają dalej.
+4. Profil użytkownika powstaje z obecnego `identity` + `persona` w konfiguracji,
+   z oznaczeniem źródła `chosen`.
+5. Test migracji uruchamiany na bazie z poprzedniej wersji, w CI.
+
+## Czego świadomie nie robimy teraz
+
+Mobile · GARIS Server · MCP i pluginy · modele lokalne · integracje poczty i
+kalendarza · wielojęzyczność poza polskim i angielskim. Wszystko to jest
+sensowne i wszystko to jest bez znaczenia, dopóki produkt nie działa dla jednej
+osoby na jednym komputerze.

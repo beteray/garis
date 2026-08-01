@@ -11,6 +11,11 @@ Rozdziela zweryfikowane od tylko-skompilowanego, bo w tym projekcie ta różnica
 zdążyła już raz kosztować: powłoka miała za sobą pełny code review i nie
 kompilowała się w ogóle.
 
+- **`docs/AUDIT.md`** — audyt oparty na pomiarach, z klasyfikacją P0–P3. Zacznij tu.
+- **`docs/ROADMAP.md`** — milestone'y M1–M13, kolejność zależności, definicja ukończenia.
+- `docs/PRODUCT.md` — czym GARIS jest, model użytkownika, zgody, pamięć.
+- `docs/STATE_MACHINES.md` — zadanie, połączenie, dostawca, klasyfikator, błędy.
+- `docs/IA_AND_DESIGN.md` — mapa ekranów, materiały szkła, responsywność, dostępność, budżety.
 - `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
 - `docs/KNOWN_ISSUES.md` — co blokuje i co już zamknięte.
 - `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
