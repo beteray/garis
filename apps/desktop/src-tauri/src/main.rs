@@ -188,6 +188,11 @@ fn start_engine(app: &AppHandle) {
     let mut command = Command::new(engine_binary());
     command
         .args(["serve", "--print-token", "--port", "8756"])
+        // The engine speaks Polish. Without these, a Python started with no
+        // console picks cp1250 on Windows and the handshake line dies on its
+        // first "ł" — before the window ever learns the address or the token.
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8:replace")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -222,7 +227,7 @@ fn start_engine(app: &AppHandle) {
             let mut token = String::new();
             let mut settled = false;
 
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            read_lines_lossy(stdout, |line| {
                 // The token is a credential. It goes to the shell's memory and
                 // nowhere else — least of all a plaintext log.
                 if let Some(rest) = line.strip_prefix("Token: ") {
@@ -250,20 +255,41 @@ fn start_engine(app: &AppHandle) {
                     };
                     settled = true;
                 }
-            }
+            });
         });
     }
 
     if let Some(stderr) = child.stderr.take() {
         let log = log.clone();
         std::thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                append_line(&log, &line);
-            }
+            read_lines_lossy(stderr, |line| append_line(&log, &line));
         });
     }
 
     *engine.child.lock().expect("engine child poisoned") = Some(child);
+}
+
+/// Read a pipe line by line, never stopping on a byte we cannot decode.
+///
+/// `BufRead::lines()` yields `Err` for a line that is not valid UTF-8, and the
+/// `map_while(Result::ok)` it invites ends the loop there. One mis-encoded
+/// character from a Python that ignored our environment would silently deafen
+/// the shell for the rest of the session — including the handshake. Decoding
+/// lossily costs a replacement glyph in the log instead.
+fn read_lines_lossy(pipe: impl std::io::Read, mut on_line: impl FnMut(String)) {
+    let mut reader = BufReader::new(pipe);
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        match reader.read_until(b'\n', &mut raw) {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        while matches!(raw.last(), Some(b'\n') | Some(b'\r')) {
+            raw.pop();
+        }
+        on_line(String::from_utf8_lossy(&raw).into_owned());
+    }
 }
 
 fn attach_to_running() -> Option<EngineInfo> {

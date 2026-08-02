@@ -18,6 +18,7 @@ from typing import Any
 
 from . import __version__
 from .app import Garis, build
+from .console import use_utf8
 from .errors import GarisError
 from .events import Topic
 from .memory import MemoryKind
@@ -533,6 +534,10 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before the first character leaves this process, including argparse's own
+    # error messages: on Windows an unconfigured stdout is cp1250 and the first
+    # Polish sentence either raises or arrives unreadable.
+    use_utf8()
     args = build_parser().parse_args(argv)
     try:
         return asyncio.run(_run(args))
