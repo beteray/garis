@@ -34,8 +34,12 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (309 testów). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (360 testów). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
+
+**0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
+(`conversation.py`, `agent/intent.py`, `POST /api/say`) i strumienie mówią
+UTF-8 na Windows (`console.py`, `main.rs`).
 
 ```
 core/src/garis/
@@ -64,7 +68,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 309 passed
+.venv/bin/python -m pytest -q                 # 360 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -200,6 +204,16 @@ Zapisane, żeby nie wpaść drugi raz:
   na sprawne wyłącznie dlatego, że maszyna deweloperska miała
   `PYTHONUNBUFFERED=1`. `tests/test_engine_handshake.py` **usuwa tę zmienną**,
   bo z nią zepsuty silnik przechodzi.
+- **`stdout` bez konsoli to na Windows `cp1250`, nie UTF-8.** Silnik mówi po
+  polsku i pisze do potoku, którego nie ma z czym negocjować — pierwsze „ł"
+  albo wywala `print`, albo dociera jako bajty, których powłoka nie odczyta.
+  `console.use_utf8()` biegnie **przed pierwszym znakiem** w `cli.main()`,
+  a `main.rs` ustawia dziecku `PYTHONUTF8=1` i `PYTHONIOENCODING=utf-8:replace`.
+  Obie strony, bo każda sama w sobie zawodzi przy innym sposobie uruchomienia.
+- **`BufRead::lines()` kończy pętlę na pierwszej linii spoza UTF-8.**
+  `map_while(Result::ok)` wygląda niewinnie i ucisza powłokę do końca sesji —
+  łącznie z handshakiem, jeśli trafi wcześnie. `read_lines_lossy` czyta bajty
+  i dekoduje stratnie: jeden znak zastępczy w logu zamiast głuchoty.
 - **Nie zamykaj potoku po odczytaniu handshake'u.** Wyjście z pętli czytającej
   zamyka `stdout` dziecka; następny zapis silnika idzie w nieistniejący potok.
   Trzeba drenować dalej — i przy okazji jest gdzie zapisywać log.
@@ -288,12 +302,22 @@ Zrobione:
 3. ✅ Powłoka Tauri napisana: tray, hide-on-close, Mica, autostart, skrót
    globalny, uruchamianie i dołączanie do silnika.
 
+4. ✅ Rozmowa przestała być zadaniem (0.1.2): `agent/intent.py` rozstrzyga
+   regułami, `conversation.py` odpowiada z faktów, `POST /api/say` mówi
+   `kind` wprost. 46 testów.
+5. ✅ UTF-8 od silnika do okna (0.1.2) — obie strony potoku. 8 testów.
+   **Zweryfikowane na Linuksie** przez interpreter udający polskie Windows
+   (`PYTHONIOENCODING=cp1250`); na prawdziwym Windows jeszcze nie uruchomione.
+
 Zostało:
 
-4. ⏳ **Zbudować powłokę na Windows 11** i poprawić to, co się posypie.
-5. ⏳ Ikony aplikacji i tray-a.
-6. ⏳ Instalator (MSI/NSIS) + podpis.
-7. ⏳ Test „zamknięcie okna nie zatrzymuje zadania" na realnym Windows.
+6. ⏳ **Zbudować powłokę na Windows 11** i poprawić to, co się posypie.
+7. ⏳ Ikony aplikacji i tray-a.
+8. ⏳ Instalator (MSI/NSIS) + podpis.
+9. ⏳ Test „zamknięcie okna nie zatrzymuje zadania" na realnym Windows.
+10. ⏳ Przeprojektowanie interfejsu (tokeny semantyczne, materiały szkła,
+    responsywność 1024×700 → ultrawide, skalowanie 100–175%, personalizacja).
+    **Nie zaczęte** — opisane w `docs/UI.md`.
 
 Wymagania wizualne są nienegocjowalne i opisane w `docs/UI.md`: Liquid Glass,
 framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
@@ -301,7 +325,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 309 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 360 testów, musi być zielone
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

@@ -31,6 +31,7 @@ garis token                        # sam token, gdy serwer już działa
 |---|---|---|
 | GET | `/api/health` | Żywotność (bez tokenu) |
 | GET | `/api/state` | Wszystko, co potrzebne po otwarciu okna — jeden przelot |
+| POST | `/api/say` | `{text, target?}` → `{kind, text, intent, task_id?}` — **jedyne wejście dla tego, co człowiek napisał** |
 | GET | `/api/tasks` | `?state=` `?active=true` `?limit=` |
 | POST | `/api/tasks` | `{goal, criteria?, target?, origin?}` → `{task_id, id, …}` |
 | GET | `/api/tasks/{id}` | Szczegóły + `steps` + `approvals` + `plan` + `question` |
@@ -53,6 +54,32 @@ garis token                        # sam token, gdy serwer już działa
 | GET | `/api/audit` | `?task=` `?limit=` |
 | GET | `/api/config` | Pełna konfiguracja |
 | PATCH | `/api/config` | `{"voice.wake_word": "garis", "dev.verbose": true}` — klucze kropkowane, **wszystko albo nic** |
+
+### Rozmowa czy zadanie
+
+`POST /api/say` rozstrzyga, czym jest wpisany tekst, **zanim** powstanie zadanie.
+`kind` jest kontraktem i klient nie ma prawa go zgadywać:
+
+| `kind` | Kod | Co się stało |
+|---|---|---|
+| `chat` | `200` | Odpowiedź w `text`. **Żadne zadanie nie powstało.** |
+| `task` | `201` | Powstało zadanie; `task_id` i `task` je opisują, `text` jest pusty. |
+| `pointer` | `200` | To była odpowiedź na pytanie, które już czeka — `task_id` wskazuje które. |
+
+Rozstrzyganie idzie w kolejności: reguły (bez modelu), potem otwarte pytanie
+zadania, potem model. Powitania, podziękowania, „jak się masz", „co potrafisz"
+i arytmetyka są rozstrzygane regułami, więc komputer **bez żadnego klucza API
+nadal odpowiada na „cześć"** — to była zmierzona awaria: „cześć" stawało się
+wiecznym zadaniem `blocked`. Czego reguły nie umieją rozstrzygnąć, a model nie
+odpowie (bo go nie ma), staje się zadaniem — brak dowodu, że nie ma pracy, nie
+jest dowodem, że pracy nie ma.
+
+`POST /api/tasks` zostaje bez zmian i **zawsze** tworzy zadanie: wywołujący,
+który już wie, że ma cel (agent serwerowy, automatyzacja), nie powinien mieć
+podważanej intencji.
+
+Pole `why` (dlaczego tak zaklasyfikowano) pojawia się wyłącznie przy
+`dev.verbose` — to diagnostyka, nie rozmowa.
 
 ### Dostawca modeli
 

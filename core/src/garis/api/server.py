@@ -330,6 +330,7 @@ class ApiServer:
             route("GET", "/api/health", self._health, auth=False),
             route("GET", "/api/state", self._state),
 
+            route("POST", "/api/say", self._say),
             route("GET", "/api/tasks", self._tasks),
             route("POST", "/api/tasks", self._create_task),
             route("GET", "/api/tasks/{id}", self._task),
@@ -382,6 +383,29 @@ class ApiServer:
             limit=int(request.query.get("limit", "50")),
         )
         return ok({"tasks": [proto.task_view(r) for r in records]})
+
+    async def _say(self, request: Request) -> Reply:
+        """Everything a person types goes here — and only some of it is work.
+
+        ``POST /api/tasks`` still exists and still creates a task unconditionally,
+        because a caller that already knows it has a goal (the server agent, an
+        automation) should not have its intent re-litigated.
+        """
+        payload = request.json()
+        said = str(payload.get("text", "")).strip()
+        if not said:
+            return error(422, "Napisz coś")
+        answer = await self.garis.say(
+            said,
+            origin=str(payload.get("origin", "user")),
+            target=str(payload.get("target", "local")),
+        )
+        body = answer.to_dict()
+        if answer.task is not None:
+            body["task"] = proto.task_view(answer.task)
+        if self.garis.config.dev.verbose:
+            body["why"] = answer.reason
+        return ok(body, status=201 if answer.task is not None else 200)
 
     async def _create_task(self, request: Request) -> Reply:
         payload = request.json()

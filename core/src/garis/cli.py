@@ -88,9 +88,20 @@ async def cmd_do(garis: Garis, args: argparse.Namespace) -> int:
         return EXIT_OK
 
     follow = _follow_progress(garis) if args.verbose else None
-    task = garis.tasks.submit(
-        goal, criteria=tuple(args.criteria or ()), target=args.on or "local"
-    )
+    if args.criteria:
+        # Stated acceptance criteria are a promise that there is work; nothing
+        # to classify.
+        task = garis.tasks.submit(
+            goal, criteria=tuple(args.criteria), target=args.on or "local"
+        )
+    else:
+        answer = await garis.say(goal, target=args.on or "local")
+        if answer.task is None:
+            if follow is not None:
+                follow.cancel()
+            _out(answer.text)
+            return EXIT_OK
+        task = answer.task
     _out(_dim(f"[{task.id}] przyjęte"))
 
     record = await garis.tasks.wait(task.id, timeout=args.timeout)

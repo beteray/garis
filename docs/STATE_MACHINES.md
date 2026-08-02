@@ -165,10 +165,10 @@ kryterium miękkie, status `preview` i preferencja użytkownika.
 
 ---
 
-## 4. Klasyfikator intencji — nowy
+## 4. Klasyfikator intencji — **zaimplementowany** (`agent/intent.py`, `conversation.py`)
 
-Dziś nie istnieje; wszystko staje się zadaniem. Zmierzone: „witaj" zostaje
-wiecznym zadaniem `blocked`.
+Było: wszystko staje się zadaniem. Zmierzone: „witaj" zostawało wiecznym
+zadaniem `blocked` — powitanie z paskiem postępu.
 
 | Klasa | Co powstaje |
 |---|---|
@@ -184,10 +184,32 @@ wiecznym zadaniem `blocked`.
 | zgłoszenie błędu | wpis diagnostyczny |
 
 Klasyfikacja działa **bez modelu chmurowego** dla przypadków oczywistych
-(powitania, podziękowania, jednosłowne potwierdzenia) — inaczej brak klucza
-znów zamienia „cześć" w zadanie.
+(powitania, pożegnania, podziękowania, jednosłowne potwierdzenia, „jak się
+masz", „co potrafisz", arytmetyka) — inaczej brak klucza znów zamienia „cześć"
+w zadanie.
 
-Zasada: **zadanie powstaje tylko wtedy, gdy jest co śledzić.**
+Kolejność jest częścią kontraktu:
+
+1. **Reguły** (`agent/intent.py`) — deterministyczne, bez sieci, bez modelu.
+   Powitanie doklejone z przodu polecenia jest interpunkcją: „cześć, sprawdź
+   dysk" to zadanie, decyduje reszta zdania.
+2. **Otwarte pytanie zadania** — „tak" przy pytaniu na ekranie znaczy „tak na
+   to pytanie", nie wesołe potwierdzenie niczego.
+3. **Model** — tylko dla tego, czego reguły nie rozstrzygnęły.
+4. **Zadanie** — gdy nic powyżej nie odpowiedziało.
+
+Zasada: **zadanie powstaje tylko wtedy, gdy jest co śledzić.** Odwrotność też
+obowiązuje: „nie jestem pewien" nie jest dowodem, że nie ma czego śledzić, więc
+niepewność kończy się zadaniem, a nie milczeniem.
+
+Odpowiedzi są **liczone, nie generowane**: ile zadań jest w toku, ile narzędzi
+jest na tym komputerze, ile wynosi 17 × 3. Arytmetykę liczy ograniczone drzewo
+`ast` — literały i cztery działania, nic więcej — więc nie da się tą drogą nic
+wykonać.
+
+Zostaje do zrobienia: odpowiedź użytkownika **wznawiająca** zablokowane zadanie
+(dziś GARIS mówi, gdzie ta odpowiedź należy, zamiast ją połknąć), przypomnienia,
+subskrypcje i automatyzacje jako osobne klasy.
 
 ---
 

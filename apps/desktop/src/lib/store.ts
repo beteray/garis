@@ -37,7 +37,8 @@ export interface ChatEntry {
   text: string;
   at: number;
   taskId?: string;
-  kind?: "report" | "question" | "notice";
+  /** "answer" is conversation — a reply with no task behind it. */
+  kind?: "report" | "question" | "notice" | "answer";
   pending?: boolean;
 }
 
@@ -286,7 +287,12 @@ export const useStore = create<Store>((set, get) => ({
     }));
 
     try {
-      await api.submit(text);
+      const said = await api.say(text);
+      if (said.kind === "task") return; // the task's own events take over
+      // A greeting has no task to watch, so nothing else will ever settle the
+      // orb — say the answer and put it back to rest here.
+      get().say(said.text, said.kind === "pointer" ? "notice" : "answer");
+      get().setAgentState("done");
     } catch (error) {
       get().say(
         error instanceof Error ? error.message : "Nie udało się zlecić zadania.",

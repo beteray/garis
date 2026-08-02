@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from .agent import Planner, Verifier
 from .config import Config, load_config
+from .conversation import Answer, Conversation
 from .crypto import SecretBox, load_or_create_master_key, subkey
 from .events import EventBus
 from .memory import MemoryService
@@ -49,6 +50,7 @@ class Garis:
     voice: VoiceService
     settings: SettingsService
     providers: ProviderPool
+    conversation: Conversation
 
     async def start(self) -> None:
         """Begin the background work a long-lived GARIS needs.
@@ -73,6 +75,14 @@ class Garis:
         request may be "run this task", and it must find the new key.
         """
         await self.providers.rebuild(reason=reason)
+
+    async def say(self, text: str, *, origin: str = "user", target: str = "local") -> Answer:
+        """The one door for anything a person says.
+
+        Not everything said is work. This decides, and only then does a task
+        exist — which is the difference between answering "cześć" and filing it.
+        """
+        return await self.conversation.say(text, origin=origin, target=target)
 
     async def do(
         self,
@@ -137,6 +147,7 @@ def build(
 
     store = TaskStore(db)
     tasks = TaskSupervisor(store, runtime, planner, verifier, bus=bus, config=config)
+    conversation = Conversation(tasks, router, registry, config, bus=bus)
 
     # The gate is what makes ctx.note() honest: tools raise candidates, and this
     # decides which ones actually interrupt a person.
@@ -148,7 +159,7 @@ def build(
         http=http, registry=registry, runtime=runtime, router=router,
         planner=planner, verifier=verifier, tasks=tasks,
         notifications=notifications, voice=voice, settings=settings,
-        providers=providers,
+        providers=providers, conversation=conversation,
     )
 
 

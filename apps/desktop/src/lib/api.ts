@@ -33,6 +33,16 @@ export interface Report {
   developer?: Record<string, unknown>;
 }
 
+/** The answer to `POST /api/say`: an answer, a started task, or a pointer to
+ *  the question already on screen. `kind` is the contract — never infer it. */
+export interface Said {
+  kind: "chat" | "task" | "pointer";
+  text: string;
+  intent: string;
+  task_id?: string;
+  task?: Task;
+}
+
 export interface Task {
   id: string;
   goal: string;
@@ -324,6 +334,9 @@ export class GarisApi {
   tasks = (query = "") =>
     this.request<{ tasks: Task[] }>("GET", `/api/tasks${query}`);
   task = (id: string) => this.request<Task>("GET", `/api/tasks/${id}`);
+  /** Everything a person types. The engine decides whether it is work. */
+  say = (text: string, target = "local") =>
+    this.request<Said>("POST", "/api/say", { text, target });
   submit = (goal: string, criteria: string[] = [], target = "local") =>
     this.request<Task & { task_id: string }>("POST", "/api/tasks", {
       goal,
