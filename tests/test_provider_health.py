@@ -307,3 +307,68 @@ def test_health_survives_a_body_that_is_not_json() -> None:
     status, _, _ = classify_response(502, "<html>Bad Gateway</html>", {}, now=0.0)
     assert status is ProviderStatus.OFFLINE
     json.dumps(ProviderHealth(provider="x").to_dict())  # must stay serialisable
+
+
+# ------------------------------------------------- what the screen may show
+
+
+async def test_the_provider_view_carries_no_secret_anywhere(garis) -> None:
+    """The status screen shows state, never the thing that produces it.
+
+    A key value, or even the ``vault://`` reference that locates one, has no
+    business on a settings screen — and this is the payload that screen renders.
+    """
+    import json
+
+    from garis.api.server import ApiServer
+    from garis.api.server import Request as ApiRequest
+    from garis.config import ProviderConfig
+    from garis.net import FakeTransport, Response
+
+    garis.config.models.providers = {
+        "gemini": ProviderConfig(key_ref="vault://gemini_api_key")
+    }
+    garis.http._transport = FakeTransport(
+        lambda request: Response(200, {}, b'{"models": []}', request.url)
+    )
+    garis.vault.set("gemini_api_key", "sk-ABSOLUTNIE-TAJNY-KLUCZ")
+    await garis.providers.rebuild(reason="test")
+
+    server = ApiServer(garis, host="127.0.0.1", port=0)
+    request = ApiRequest("GET", "/api/providers", {}, {}, b"")
+    seen = json.dumps(
+        [(await server._providers(request)).body,
+         (await server._state(request)).body],
+        ensure_ascii=False,
+    )
+
+    assert "sk-ABSOLUTNIE-TAJNY-KLUCZ" not in seen
+    assert "vault://" not in seen
+    assert "gemini_api_key" not in seen
+
+
+async def test_every_provider_state_reaches_the_screen_with_a_polish_sentence(garis) -> None:
+    """``status`` is for the machine, ``reason`` is for the person. Both, always."""
+    from garis.api.server import ApiServer
+    from garis.api.server import Request as ApiRequest
+    from garis.config import ProviderConfig
+    from garis.net import FakeTransport, Response
+
+    garis.config.models.providers = {
+        "gemini": ProviderConfig(key_ref="vault://gemini_api_key")
+    }
+    garis.http._transport = FakeTransport(
+        lambda request: Response(429, {}, b'{"error": {"message": "quota"}}', request.url)
+    )
+    garis.vault.set("gemini_api_key", "test-key")
+    await garis.providers.rebuild(reason="test")
+
+    server = ApiServer(garis, host="127.0.0.1", port=0)
+    reply = await server._providers(ApiRequest("GET", "/api/providers", {}, {}, b""))
+
+    gemini = next(p for p in reply.body["providers"] if p["name"] == "gemini")
+    assert gemini["status"] == "rate_limit"
+    assert gemini["reason"] and gemini["reason"][0].isupper() and gemini["reason"].endswith(".")
+    assert gemini["available"] is False
+    # And the technical text is present but separate, for developer mode only.
+    assert "detail" in gemini

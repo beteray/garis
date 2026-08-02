@@ -9,9 +9,11 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import type { Provider } from "../lib/api";
 import { ACCENTS, DEFAULT_APPEARANCE } from "../lib/appearance";
 import { base, quick, staggerContainer } from "../lib/motion";
 import { useStore } from "../lib/store";
+import { ProviderRow, RecheckButton } from "./Providers";
 import { Glass, Pill, Section } from "./ui";
 
 const PERSONAS = [
@@ -21,19 +23,24 @@ const PERSONAS = [
   ["cichy", "Cichy", "Minimum słów."],
 ] as const;
 
+/** secret name, label, and the router's name for the same provider — the three
+ *  have to be paired somewhere, and pairing them here beats guessing per row. */
 const PROVIDERS = [
-  ["openai_api_key", "OpenAI"],
-  ["anthropic_api_key", "Claude"],
-  ["gemini_api_key", "Gemini"],
+  ["openai_api_key", "OpenAI", "openai"],
+  ["anthropic_api_key", "Claude", "anthropic"],
+  ["gemini_api_key", "Gemini", "gemini"],
 ] as const;
 
 function Row({
   label,
   hint,
+  status,
   children,
 }: {
   label: string;
   hint?: string;
+  /** A measured provider state, rendered in full instead of a one-line hint. */
+  status?: Provider;
   children: React.ReactNode;
 }) {
   return (
@@ -46,9 +53,10 @@ function Row({
         padding: "11px 0",
       }}
     >
-      <div style={{ display: "grid", gap: 2 }}>
+      <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
         <span>{label}</span>
         {hint && <span className="tiny faint">{hint}</span>}
+        {status && <ProviderRow provider={status} />}
       </div>
       {children}
     </div>
@@ -217,6 +225,21 @@ export function SettingsView() {
   const has = (name: string) => secrets.some((secret) => secret.name === name);
   // Defaults until the first frame arrives, so the controls are never blank.
   const look = engine?.appearance ?? DEFAULT_APPEARANCE;
+  // A provider GARIS does not build at all has no measurement; "brak klucza" is
+  // the honest reading of that, not "unknown".
+  const providerNamed = (name: string): Provider =>
+    engine?.models.providers.find((provider) => provider.name === name) ?? {
+      name,
+      available: false,
+      models: [],
+      status: "invalid_config",
+      reason: "Brak klucza.",
+      detail: "",
+      checked_at: 0,
+      latency_ms: 0,
+      retry_after: 0,
+      failures: 0,
+    };
 
   return (
     <motion.div
@@ -294,12 +317,17 @@ export function SettingsView() {
           Nie wybierasz modelu do zadania — dobieram go sam. Podaj klucze, a resztą
           się zajmę.
         </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+          <RecheckButton />
+        </div>
         <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
-          {PROVIDERS.map(([secretName, label]) => (
+          {PROVIDERS.map(([secretName, label, engineName]) => (
             <Row
               key={secretName}
               label={label}
-              hint={has(secretName) ? "klucz w sejfie" : "brak klucza"}
+              /* Not "klucz w sejfie": a rejected key is also in the vault, and
+                 saying so was how an invalid key looked healthy for an hour. */
+              status={providerNamed(engineName)}
             >
               {keyFor === secretName ? (
                 <span style={{ display: "flex", gap: 6 }}>

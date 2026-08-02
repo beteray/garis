@@ -34,7 +34,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (388 testów backendu + 13 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (390 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -68,7 +68,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 388 passed
+.venv/bin/python -m pytest -q                 # 390 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -323,6 +323,13 @@ Zostało:
     ultrawide; jeden pierścień fokusu idący za akcentem. **Zostało**:
     przeprojektowanie poszczególnych ekranów, tryb `rail` w nawigacji jako
     wybór użytkownika, jakość kuli, dźwięki, tapeta.
+11. ✅ Stan dostawców mówi prawdę w oknie (0.1.2). Ekran pokazywał „klucz
+    w sejfie" — całkowicie nieprawidłowy klucz wyglądał tak samo jak działający,
+    a dowiadywało się o tym dopiero nieudane zadanie. Teraz siedem stanów,
+    każdy ze słowem i znakiem (nie samym kolorem), zdanie po polsku prosto
+    z silnika, jedna rekomendowana akcja, „Sprawdź ponownie", a szczegóły
+    techniczne wyłącznie w trybie developerskim. Test pilnuje, że w tym
+    ładunku nie ma klucza ani `vault://`.
     Zweryfikowane budową i testami jednostkowymi — **nie oglądane na
     prawdziwym Windows w żadnej skali**.
 
@@ -332,8 +339,8 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 388 testów, musi być zielone
-cd apps/desktop && npm test              # 13 testów wyglądu
+.venv/bin/python -m pytest -q            # 390 testów, musi być zielone
+cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

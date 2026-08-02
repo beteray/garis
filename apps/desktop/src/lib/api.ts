@@ -134,6 +134,35 @@ export interface Tool {
   reversible: boolean;
 }
 
+/** Seven measured states, not a boolean.
+ *
+ *  "a key is in the vault" and "the router will send work here" were treated as
+ *  one thing and are not: a completely invalid key used to report `available:
+ *  true`. `reason` is Polish and fit to show as-is; `detail` is technical and
+ *  belongs to developer mode. */
+export type ProviderStatus =
+  | "online"
+  | "offline"
+  | "invalid_config"
+  | "invalid_key"
+  | "timeout"
+  | "rate_limit"
+  | "unknown";
+
+export interface Provider {
+  name: string;
+  available: boolean;
+  models: string[];
+  status: ProviderStatus;
+  reason: string;
+  detail: string;
+  checked_at: number;
+  latency_ms: number;
+  /** 0 means "this will not clear on its own" — out of credit, not rate-limited. */
+  retry_after: number;
+  failures: number;
+}
+
 export interface EngineState {
   protocol: number;
   version: string;
@@ -162,7 +191,7 @@ export interface EngineState {
   models: {
     privacy: string;
     spend: number;
-    providers: { name: string; available: boolean; models: string[] }[];
+    providers: Provider[];
     picks: Record<string, string>;
   };
   capabilities: {
@@ -370,6 +399,10 @@ export class GarisApi {
     this.request<Memory>("PATCH", `/api/memory/${id}`, patch);
   forget = (id: string) =>
     this.request<{ forgotten: boolean }>("DELETE", `/api/memory/${id}`);
+
+  providers = () => this.request<{ providers: Provider[] }>("GET", "/api/providers");
+  checkProviders = () =>
+    this.request<{ providers: Provider[] }>("POST", "/api/providers/check");
 
   secrets = () => this.request<{ secrets: Secret[] }>("GET", "/api/vault");
   storeSecret = (name: string, value: string, note = "") =>
