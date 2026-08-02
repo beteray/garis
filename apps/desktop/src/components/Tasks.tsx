@@ -1,216 +1,94 @@
 /**
- * Work in flight and work finished.
+ * Everything GARIS has been asked to do.
  *
- * Tasks enter, move and leave with animation because the list is the only place
- * where "GARIS is doing several things at once" becomes visible. A row that pops
- * into existence reads as a refresh; a row that slides in reads as something
- * starting.
+ * Grouped by what the user has to do about it, not by when it was created: a
+ * list sorted purely by time buries the one blocked task under fifty finished
+ * ones, and the blocked one is the only reason to open this screen.
+ *
+ * The card is `TaskCard`, shared with the conversation, so a task looks and
+ * behaves the same wherever it is seen — and "otwórz szczegóły" means the same
+ * thing in both places.
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
-import type { Task } from "../lib/api";
-import { base, listItemVariants, quick, spring, staggerContainer } from "../lib/motion";
-import { activeTasks, finishedTasks, useStore } from "../lib/store";
-import { Empty, Glass, relativeTime } from "./ui";
+import { useEffect, useState } from "react";
+import type { Task, TaskState } from "../lib/api";
+import { staggerContainer } from "../lib/motion";
+import { useStore } from "../lib/store";
+import { TaskCard } from "./TaskCard";
+import { Empty, Section } from "./ui";
 
-const STATE_TONE: Record<string, string> = {
-  pending: "var(--state-idle)",
-  running: "var(--state-working)",
-  blocked: "38 92% 62%",
-  finished: "var(--state-ok)",
-  failed: "var(--state-error)",
-  stopped: "0 0% 60%",
+const FILTERS: [string, string, (task: Task) => boolean][] = [
+  ["all", "Wszystkie", () => true],
+  ["needs", "Wymaga Ciebie", (task) => task.state === "blocked"],
+  ["active", "W toku", (task) => task.state === "running" || task.state === "pending"],
+  ["done", "Zrobione", (task) => task.state === "finished"],
+  ["failed", "Nieudane", (task) => task.state === "failed" || task.state === "stopped"],
+];
+
+/** Blocked first: it is the only group where nothing happens until somebody acts. */
+const ORDER: Record<TaskState, number> = {
+  blocked: 0,
+  running: 1,
+  pending: 2,
+  failed: 3,
+  finished: 4,
+  stopped: 5,
 };
-
-const STATE_LABEL: Record<string, string> = {
-  pending: "w kolejce",
-  running: "w toku",
-  blocked: "czeka na Ciebie",
-  finished: "gotowe",
-  failed: "nie udało się",
-  stopped: "zatrzymane",
-};
-
-export function TaskRow({ task }: { task: Task }) {
-  const [open, setOpen] = useState(false);
-  const stopTask = useStore((s) => s.stopTask);
-  const progress = useStore((s) => s.progress);
-  const tone = STATE_TONE[task.state] ?? "var(--state-idle)";
-  const live = progress.filter((line) => line.taskId === task.id).slice(-1)[0];
-  const running = task.state === "running" || task.state === "pending";
-
-  return (
-    <motion.div
-      layout
-      variants={listItemVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-    >
-      <Glass style={{ padding: 14, borderRadius: "var(--radius-card)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          {/* The status dot pulses only while there is genuinely something
-              happening — a still dot means a still task. */}
-          <motion.span
-            aria-hidden
-            animate={
-              running
-                ? { scale: [1, 1.35, 1], opacity: [0.75, 1, 0.75] }
-                : { scale: 1, opacity: 1 }
-            }
-            transition={{ duration: 1.6, repeat: running ? Infinity : 0, ease: "easeInOut" }}
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              marginTop: 6,
-              flexShrink: 0,
-              background: `hsl(${tone})`,
-              boxShadow: `0 0 12px hsl(${tone} / 0.7)`,
-            }}
-          />
-
-          <button
-            onClick={() => setOpen((value) => !value)}
-            className="btn btn--quiet"
-            style={{
-              flex: 1,
-              justifyContent: "flex-start",
-              textAlign: "left",
-              padding: 0,
-              background: "transparent",
-            }}
-            aria-expanded={open}
-          >
-            <div style={{ display: "grid", gap: 3, width: "100%" }}>
-              <div style={{ fontWeight: 550 }}>{task.goal}</div>
-              <div className="tiny soft" style={{ display: "flex", gap: 8 }}>
-                <span style={{ color: `hsl(${tone})` }}>
-                  {STATE_LABEL[task.state] ?? task.state}
-                </span>
-                <span>·</span>
-                <span>{relativeTime(task.updated_at)}</span>
-                {task.target !== "local" && (
-                  <>
-                    <span>·</span>
-                    <span>{task.target}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </button>
-
-          {running && (
-            <motion.button
-              className="btn btn--quiet tiny"
-              onClick={() => void stopTask(task.id)}
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.96 }}
-              transition={quick}
-            >
-              Zatrzymaj
-            </motion.button>
-          )}
-        </div>
-
-        {/* The live progress line replaces itself in place: one line, always the
-            most recent, never a growing log in the user's face. */}
-        <AnimatePresence mode="wait">
-          {running && live && (
-            <motion.div
-              key={live.text}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={base}
-              className="tiny faint"
-              style={{ marginTop: 8, paddingLeft: 21 }}
-            >
-              {live.text}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={spring}
-              style={{ overflow: "hidden" }}
-            >
-              <div style={{ paddingTop: 12, display: "grid", gap: 8 }}>
-                {task.report?.short && (
-                  <p className="selectable">{task.report.short}</p>
-                )}
-                {task.question && (
-                  <p className="selectable" style={{ color: `hsl(${STATE_TONE.blocked})` }}>
-                    {task.question}
-                  </p>
-                )}
-                {task.report?.details && (
-                  <pre
-                    className="mono soft selectable"
-                    style={{
-                      margin: 0,
-                      whiteSpace: "pre-wrap",
-                      maxHeight: 220,
-                      overflow: "auto",
-                    }}
-                  >
-                    {task.report.details}
-                  </pre>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Glass>
-    </motion.div>
-  );
-}
 
 export function TasksView() {
   const tasks = useStore((s) => s.tasks);
-  const active = activeTasks(tasks);
-  const done = finishedTasks(tasks);
+  const refresh = useStore((s) => s.refresh);
+  const [filter, setFilter] = useState("all");
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const match = FILTERS.find(([id]) => id === filter)?.[2] ?? (() => true);
+  const shown = [...tasks]
+    .filter(match)
+    .sort((a, b) => ORDER[a.state] - ORDER[b.state] || b.updated_at - a.updated_at);
+
+  const counts = Object.fromEntries(
+    FILTERS.map(([id, , predicate]) => [id, tasks.filter(predicate).length]),
+  ) as Record<string, number>;
 
   return (
-    <motion.div
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-      style={{ display: "grid", gap: 22 }}
-    >
-      <section style={{ display: "grid", gap: 12 }}>
-        <h2>Aktywne</h2>
-        {active.length === 0 ? (
-          <Empty icon="🌙" title="Nic teraz nie robię." hint="Powiedz, co mam zrobić." />
-        ) : (
-          <motion.div layout>
-            <AnimatePresence initial={false}>
-              {active.map((task) => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </section>
+    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="screen">
+      <Section title="Zadania">
+        <div className="filters" role="tablist" aria-label="Filtr zadań">
+          {FILTERS.map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={filter === id}
+              className="btn btn--quiet tiny"
+              data-active={filter === id || undefined}
+              onClick={() => setFilter(id)}
+            >
+              {label}
+              {counts[id] > 0 && <span className="nav-item__badge tiny">{counts[id]}</span>}
+            </button>
+          ))}
+        </div>
 
-      {done.length > 0 && (
-        <section style={{ display: "grid", gap: 12 }}>
-          <h2 className="soft">Zakończone</h2>
-          <motion.div layout>
+        {shown.length === 0 ? (
+          <Empty
+            icon="◷"
+            title={filter === "all" ? "Jeszcze nic nie robiłem." : "Nic w tej grupie."}
+            hint={filter === "all" ? "Powiedz na Starcie, co ma być zrobione." : undefined}
+          />
+        ) : (
+          <div className="task-list">
             <AnimatePresence initial={false}>
-              {done.slice(0, 25).map((task) => (
-                <TaskRow key={task.id} task={task} />
+              {shown.map((task) => (
+                <TaskCard key={task.id} taskId={task.id} />
               ))}
             </AnimatePresence>
-          </motion.div>
-        </section>
-      )}
+          </div>
+        )}
+      </Section>
     </motion.div>
   );
 }

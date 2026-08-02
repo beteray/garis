@@ -190,10 +190,20 @@ export interface EngineState {
   };
   models: {
     privacy: string;
+    allow_cloud: boolean;
     spend: number;
     providers: Provider[];
     picks: Record<string, string>;
   };
+  notifications: {
+    min_importance: number;
+    quiet_hours: { enabled: boolean; start: string; end: string; active_now: boolean };
+    gaming: boolean;
+    suppress_while_gaming: boolean;
+    max_per_hour: number;
+  };
+  tasks: { max_parallel: number };
+  autostart: boolean;
   capabilities: {
     tools_total: number;
     tools_available: number;
@@ -202,6 +212,7 @@ export interface EngineState {
     policy: {
       confirm_effects: string[];
       download_notice: string;
+      allow_admin_elevation: boolean;
       never: string[];
     };
   };

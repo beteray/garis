@@ -10,7 +10,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { EASE, base, spring } from "../lib/motion";
 import { useStore } from "../lib/store";
-import { Orb } from "./Orb";
+import { Presence } from "./Presence";
 import { Glass, Pill } from "./ui";
 
 interface Step {
@@ -130,7 +130,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ ...spring, delay: 0.1 }}
         >
-          <Orb state={index === STEPS.length - 1 ? "done" : "idle"} size={200} />
+          <Presence state={index === STEPS.length - 1 ? "completed" : "idle"} size={16} />
         </motion.div>
 
         <Glass

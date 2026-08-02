@@ -173,7 +173,7 @@ class AppearanceConfig:
     text_scale: float = 1.0          # 0.9 .. 1.4
     animation: str = "system"        # system (follow the OS) | full | off
     orb: str = "full"                # full | simple | off
-    navigation: str = "labels"       # labels | rail
+    navigation: str = "auto"         # auto (follow the window) | labels | rail
     sounds: bool = False
     high_contrast: bool = False
 
@@ -198,7 +198,7 @@ _APPEARANCE_CHOICES: dict[str, tuple[str, ...]] = {
     "density": ("comfortable", "compact"),
     "animation": ("system", "full", "off"),
     "orb": ("full", "simple", "off"),
-    "navigation": ("labels", "rail"),
+    "navigation": ("auto", "labels", "rail"),
 }
 
 

@@ -21,25 +21,25 @@ import type {
 } from "./api";
 import { GarisApi } from "./api";
 import { applyAppearance } from "./appearance";
+import type { Entry } from "./chat";
+import type { Route } from "./nav";
+import { outcomeOf } from "./chat";
 
-export type View =
-  | "home"
-  | "conversation"
-  | "tasks"
-  | "memory"
-  | "devices"
-  | "subscriptions"
-  | "settings"
-  | "diagnostics";
+/** Routes live in lib/nav.ts, which is also what draws them. */
+export type View = Route;
 
 export interface ChatEntry {
   id: string;
-  role: "user" | "garis";
   text: string;
   at: number;
   taskId?: string;
-  /** "answer" is conversation — a reply with no task behind it. */
-  kind?: "report" | "question" | "notice" | "answer";
+  /** What this is. See lib/chat.ts — every value maps to something the engine
+   *  produced, never to a category the window invented. */
+  kind: Entry;
+  /** The engine's own classification, for developer mode. */
+  intent?: string;
+  /** An approval this entry is about, so the card can resolve it in place. */
+  approvalId?: string;
   pending?: boolean;
 }
 
@@ -84,9 +84,15 @@ interface Store {
   refreshTools: () => Promise<void>;
 
   send: (goal: string) => Promise<void>;
+  runAsTask: (goal: string) => Promise<void>;
+  /** Text put into the composer from elsewhere — "Popraw" on a sent message. */
+  composerDraft: string;
+  setComposerDraft: (text: string) => void;
   stopTask: (id: string) => Promise<void>;
   resolveApproval: (id: string, approved: boolean) => Promise<void>;
-  say: (text: string, kind?: ChatEntry["kind"], taskId?: string) => void;
+  say: (text: string, kind?: Entry, extra?: Partial<ChatEntry>) => void;
+  /** True while a request the user is waiting on is genuinely open. */
+  sending: boolean;
 }
 
 const MAX_CHAT = 300;
@@ -104,6 +110,8 @@ export const useStore = create<Store>((set, get) => ({
   view: "home",
   agentState: "idle",
   level: 0,
+  sending: false,
+  composerDraft: "",
 
   tasks: [],
   approvals: [],
@@ -116,6 +124,7 @@ export const useStore = create<Store>((set, get) => ({
   tools: [],
 
   setApi: (api) => set({ api }),
+  setComposerDraft: (composerDraft) => set({ composerDraft }),
   setView: (view) => set({ view }),
   setLevel: (level) => set({ level }),
 
@@ -129,17 +138,16 @@ export const useStore = create<Store>((set, get) => ({
 
   setConnection: (connection) => set({ connection }),
 
-  say: (text, kind = "notice", taskId) =>
+  say: (text, kind = "notice", extra = {}) =>
     set((current) => ({
       chat: [
         ...current.chat.slice(-MAX_CHAT),
         {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          role: "garis",
           text,
           at: Date.now() / 1000,
           kind,
-          taskId,
+          ...extra,
         },
       ],
     })),
@@ -211,17 +219,34 @@ export const useStore = create<Store>((set, get) => ({
     }
 
     // What the user actually hears about. Everything else stays in the panels.
-    if (topic === "task.finished" || topic === "task.failed") {
-      const report = data.report as string;
-      if (report) store.say(report, "report", data.task_id as string);
+    const taskId = data.task_id as string | undefined;
+
+    if (topic === "task.finished") {
+      const text = data.report as string;
+      // "done" and "done and checked" are different claims and the engine
+      // distinguishes them, so the window must not flatten them into one.
+      const task = get().tasks.find((candidate) => candidate.id === taskId);
+      if (text) store.say(text, outcomeOf(task?.report), { taskId });
+    }
+    if (topic === "task.failed") {
+      const text = (data.report as string) || "Nie udało się.";
+      store.say(text, "failure", { taskId });
     }
     if (topic === "task.blocked") {
-      const question = (data.question as string) ?? "Potrzebuję Twojej zgody.";
-      store.say(question, "question", data.task_id as string);
+      // An approval and a question are not the same interruption: one wants a
+      // decision, the other wants information. The engine says which.
+      const approvalId = data.approval_id as string | undefined;
+      const question =
+        (data.question as string) ||
+        (approvalId ? "Potrzebuję Twojej zgody." : "Potrzebuję odpowiedzi.");
+      store.say(question, approvalId ? "approval" : "clarification", {
+        taskId,
+        approvalId,
+      });
     }
     if (topic === "notice" && !data.silent) {
       const message = data.message as string;
-      if (message) store.say(message, "notice", data.task_id as string);
+      if (message) store.say(message, "notice", { taskId });
     }
   },
 
@@ -289,29 +314,63 @@ export const useStore = create<Store>((set, get) => ({
     const text = goal.trim();
     if (!api || !text) return;
 
-    const id = `${Date.now()}-user`;
     set((current) => ({
       chat: [
         ...current.chat.slice(-MAX_CHAT),
-        { id, role: "user", text, at: Date.now() / 1000 },
+        {
+          id: `${Date.now()}-user`,
+          text,
+          at: Date.now() / 1000,
+          kind: "user" as Entry,
+        },
       ],
-      // Optimistic only about *appearing to think* — never about the outcome.
-      agentState: "thinking",
+      // Optimistic about *a request being open*, which is a fact, never about
+      // what the engine will decide it is.
+      sending: true,
     }));
 
     try {
+      // Everything typed goes through /api/say. The engine decides whether it
+      // is work; the window does not get to guess, because guessing is what
+      // turned "cześć" into a task in the first place.
       const said = await api.say(text);
-      if (said.kind === "task") return; // the task's own events take over
-      // A greeting has no task to watch, so nothing else will ever settle the
-      // orb — say the answer and put it back to rest here.
-      get().say(said.text, said.kind === "pointer" ? "notice" : "answer");
-      get().setAgentState("done");
+      if (said.kind === "task") {
+        // The card renders from the task itself, so all the entry needs is the
+        // id — the report, steps and state arrive over the event stream.
+        get().say("", "task", { taskId: said.task_id, intent: said.intent });
+      } else {
+        get().say(said.text, said.kind === "pointer" ? "notice" : "answer", {
+          intent: said.intent,
+          taskId: said.task_id,
+        });
+      }
+    } catch (error) {
+      get().say(
+        error instanceof Error ? error.message : "Nie udało się wysłać.",
+        "failure",
+      );
+    } finally {
+      set({ sending: false });
+    }
+  },
+
+  /** The explicitly executable path. Only a caller that already knows it has a
+   *  goal — "Wykonaj mimo to" — may create a task without classification. */
+  runAsTask: async (goal) => {
+    const { api } = get();
+    const text = goal.trim();
+    if (!api || !text) return;
+    set({ sending: true });
+    try {
+      const task = await api.submit(text);
+      get().say("", "task", { taskId: task.task_id });
     } catch (error) {
       get().say(
         error instanceof Error ? error.message : "Nie udało się zlecić zadania.",
-        "notice",
+        "failure",
       );
-      get().setAgentState("failed");
+    } finally {
+      set({ sending: false });
     }
   },
 

@@ -9,11 +9,10 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import type { Provider } from "../lib/api";
 import { ACCENTS, DEFAULT_APPEARANCE } from "../lib/appearance";
+import { ModelsSettings } from "./Models";
 import { base, quick, staggerContainer } from "../lib/motion";
 import { useStore } from "../lib/store";
-import { ProviderRow, RecheckButton } from "./Providers";
 import { Glass, Pill, Section } from "./ui";
 
 const PERSONAS = [
@@ -23,24 +22,13 @@ const PERSONAS = [
   ["cichy", "Cichy", "Minimum słów."],
 ] as const;
 
-/** secret name, label, and the router's name for the same provider — the three
- *  have to be paired somewhere, and pairing them here beats guessing per row. */
-const PROVIDERS = [
-  ["openai_api_key", "OpenAI", "openai"],
-  ["anthropic_api_key", "Claude", "anthropic"],
-  ["gemini_api_key", "Gemini", "gemini"],
-] as const;
-
 function Row({
   label,
   hint,
-  status,
   children,
 }: {
   label: string;
   hint?: string;
-  /** A measured provider state, rendered in full instead of a one-line hint. */
-  status?: Provider;
   children: React.ReactNode;
 }) {
   return (
@@ -56,7 +44,6 @@ function Row({
       <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
         <span>{label}</span>
         {hint && <span className="tiny faint">{hint}</span>}
-        {status && <ProviderRow provider={status} />}
       </div>
       {children}
     </div>
@@ -182,292 +169,399 @@ const ACCENT_NAMES: Record<string, string> = {
   rose: "Róż",
 };
 
+
+/** The categories, in the order a person needs them. Voice is last and says
+ *  plainly that it does not work — a section that lies about being available is
+ *  worse than a section that is honest about being empty. */
+const CATEGORIES = [
+  ["general", "Ogólne"],
+  ["appearance", "Wygląd"],
+  ["models", "Modele"],
+  ["privacy", "Pamięć i prywatność"],
+  ["notifications", "Powiadomienia"],
+  ["security", "Bezpieczeństwo"],
+  ["advanced", "Zaawansowane"],
+  ["voice", "Głos"],
+] as const;
+
+type Category = (typeof CATEGORIES)[number][0];
+
 export function SettingsView() {
   const engine = useStore((s) => s.engine);
   const api = useStore((s) => s.api);
   const refresh = useStore((s) => s.refresh);
-  const refreshSecrets = useStore((s) => s.refreshSecrets);
-  const secrets = useStore((s) => s.secrets);
-
+  const [category, setCategory] = useState<Category>("general");
   const [name, setName] = useState("");
-  const [wakeWord, setWakeWord] = useState("garis");
-  const [keyFor, setKeyFor] = useState<string | null>(null);
-  const [keyValue, setKeyValue] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
+  const [problem, setProblem] = useState("");
 
   useEffect(() => {
     if (!engine) return;
     setName(engine.identity.address_as || engine.identity.name);
-    setWakeWord(engine.voice.wake_word);
   }, [engine]);
-
-  useEffect(() => {
-    void refreshSecrets();
-  }, [refreshSecrets]);
 
   const patch = async (changes: Record<string, unknown>) => {
     if (!api) return;
-    await api.patchConfig(changes);
-    setSaved(Object.keys(changes)[0] ?? null);
-    setTimeout(() => setSaved(null), 1600);
-    await refresh();
+    setProblem("");
+    try {
+      await api.patchConfig(changes);
+      setSaved(Object.keys(changes)[0] ?? null);
+      setTimeout(() => setSaved(null), 1600);
+      await refresh();
+    } catch (error) {
+      // A refused setting must say so. Silently reverting is how a settings
+      // screen teaches people that it does not work.
+      setProblem(error instanceof Error ? error.message : "Nie udało się zapisać.");
+    }
   };
 
-  const saveKey = async () => {
-    if (!api || !keyFor || !keyValue.trim()) return;
-    await api.storeSecret(keyFor, keyValue.trim(), "Klucz dostawcy modeli");
-    setKeyValue("");
-    setKeyFor(null);
-    await refreshSecrets();
-    await refresh();
-  };
-
-  const has = (name: string) => secrets.some((secret) => secret.name === name);
-  // Defaults until the first frame arrives, so the controls are never blank.
   const look = engine?.appearance ?? DEFAULT_APPEARANCE;
-  // A provider GARIS does not build at all has no measurement; "brak klucza" is
-  // the honest reading of that, not "unknown".
-  const providerNamed = (name: string): Provider =>
-    engine?.models.providers.find((provider) => provider.name === name) ?? {
-      name,
-      available: false,
-      models: [],
-      status: "invalid_config",
-      reason: "Brak klucza.",
-      detail: "",
-      checked_at: 0,
-      latency_ms: 0,
-      retry_after: 0,
-      failures: 0,
-    };
+  const quiet = engine?.notifications;
 
   return (
-    <motion.div
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-      style={{ display: "grid", gap: 20 }}
-    >
-      <Section title="Ty">
-        <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
-          <Row label="Jak mam się do Ciebie zwracać" hint="Np. imieniem albo „szefie”">
-            <input
-              className="field"
-              style={{ width: 200 }}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              onBlur={() => void patch({ "identity.address_as": name })}
-            />
-          </Row>
-          <Row label="Język" hint="W tym języku mówię i piszę">
-            <span className="soft">{engine?.identity.language ?? "pl"}</span>
-          </Row>
-        </Glass>
-      </Section>
+    <div className="settings">
+      <nav className="settings__tabs" aria-label="Kategorie ustawień">
+        {CATEGORIES.map(([id, label]) => (
+          <button
+            key={id}
+            className="btn btn--quiet tiny"
+            aria-current={category === id ? "true" : undefined}
+            data-active={category === id || undefined}
+            onClick={() => setCategory(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
-      <Section title="Osobowość">
-        <p className="tiny soft">
-          Zmienia ton, humor i długość wypowiedzi. Nigdy nie zmienia zasad
-          bezpieczeństwa ani sposobu wykonywania zadań.
-        </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {PERSONAS.map(([value, label, hint]) => (
-            <Pill
-              key={value}
-              active={engine?.persona.preset === value}
-              onClick={() => void patch({ "persona.preset": value })}
-            >
-              <span title={hint}>{label}</span>
-            </Pill>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Głos">
-        <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
-          <Row label="Rozmowa głosowa">
-            <Toggle
-              on={engine?.voice.enabled ?? true}
-              onChange={(value) => void patch({ "voice.enabled": value })}
-            />
-          </Row>
-          <Row label="Słowo aktywacyjne" hint="Powiedz je, żeby mnie zawołać">
-            <input
-              className="field"
-              style={{ width: 160 }}
-              value={wakeWord}
-              onChange={(event) => setWakeWord(event.target.value)}
-              onBlur={() => void patch({ "voice.wake_word": wakeWord })}
-            />
-          </Row>
-          <Row label="Nasłuchiwanie słowa aktywacyjnego" hint="Działa lokalnie, nic nie wysyłam">
-            <Toggle
-              on={engine?.voice.wake_word_enabled ?? true}
-              onChange={(value) => void patch({ "voice.wake_word_enabled": value })}
-            />
-          </Row>
-          <Row label="Push-to-talk">
-            <code className="mono soft">{engine?.voice.push_to_talk}</code>
-          </Row>
-        </Glass>
-      </Section>
-
-      <Section title="Modele">
-        <p className="tiny soft">
-          Nie wybierasz modelu do zadania — dobieram go sam. Podaj klucze, a resztą
-          się zajmę.
-        </p>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
-          <RecheckButton />
-        </div>
-        <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
-          {PROVIDERS.map(([secretName, label, engineName]) => (
-            <Row
-              key={secretName}
-              label={label}
-              /* Not "klucz w sejfie": a rejected key is also in the vault, and
-                 saying so was how an invalid key looked healthy for an hour. */
-              status={providerNamed(engineName)}
-            >
-              {keyFor === secretName ? (
-                <span style={{ display: "flex", gap: 6 }}>
+      <motion.div
+        key={category}
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="settings__body scroll"
+      >
+        {category === "general" && (
+          <>
+            <Section title="Ty">
+              <Glass className="glass--card rows">
+                <Row label="Jak mam się do Ciebie zwracać" hint="Np. imieniem albo „szefie”">
                   <input
                     className="field"
-                    style={{ width: 220 }}
-                    type="password"
-                    autoFocus
-                    value={keyValue}
-                    placeholder="wklej klucz"
-                    onChange={(event) => setKeyValue(event.target.value)}
-                    onKeyDown={(event) => event.key === "Enter" && void saveKey()}
+                    style={{ width: 200 }}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    onBlur={() => void patch({ "identity.address_as": name })}
+                    aria-label="Jak mam się do Ciebie zwracać"
                   />
-                  <button className="btn tiny" onClick={() => void saveKey()}>
-                    Zapisz
-                  </button>
-                </span>
-              ) : (
-                <button className="btn tiny" onClick={() => setKeyFor(secretName)}>
-                  {has(secretName) ? "Zmień" : "Dodaj klucz"}
-                </button>
-              )}
-            </Row>
-          ))}
-        </Glass>
-      </Section>
+                </Row>
+                <Row label="Język" hint="W tym języku mówię i piszę">
+                  <span className="soft">{engine?.identity.language ?? "pl"}</span>
+                </Row>
+                <Row label="Uruchamiaj przy starcie systemu">
+                  <Toggle
+                    on={engine?.autostart ?? true}
+                    onChange={(value) => void patch({ autostart: value })}
+                  />
+                </Row>
+              </Glass>
+            </Section>
 
-      <Section title="Wygląd">
-        <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
-          <Row label="Motyw" hint="„Systemowy” idzie za pulpitem, także po zmianie o zmierzchu">
-            <Choice
-              value={look.theme}
-              options={[
-                ["system", "Systemowy"],
-                ["dark", "Ciemny"],
-                ["light", "Jasny"],
-              ]}
-              onChange={(value) => void patch({ "appearance.theme": value })}
-            />
-          </Row>
-          <Row label="Kolor akcentu">
-            <div style={{ display: "flex", gap: 7 }}>
-              {Object.entries(ACCENTS).map(([name, hsl]) => (
-                <button
-                  key={name}
-                  aria-label={ACCENT_NAMES[name] ?? name}
-                  aria-pressed={look.accent === name}
-                  onClick={() => void patch({ "appearance.accent": name })}
-                  className="no-drag"
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: "var(--radius-pill)",
-                    background: `hsl(${hsl})`,
-                    border:
-                      look.accent === name
-                        ? "2px solid var(--ink)"
-                        : "1px solid var(--glass-stroke)",
-                    cursor: "pointer",
-                  }}
+            <Section title="Osobowość">
+              <p className="tiny soft">
+                Zmienia ton, humor i długość wypowiedzi. Nigdy nie zmienia zasad
+                bezpieczeństwa ani sposobu wykonywania zadań.
+              </p>
+              <div className="filters">
+                {PERSONAS.map(([value, label, hint]) => (
+                  <Pill
+                    key={value}
+                    active={engine?.persona.preset === value}
+                    onClick={() => void patch({ "persona.preset": value })}
+                  >
+                    <span title={hint}>{label}</span>
+                  </Pill>
+                ))}
+              </div>
+            </Section>
+          </>
+        )}
+
+        {category === "appearance" && (
+          <Section title="Wygląd">
+            <Glass className="glass--card rows">
+              <Row label="Motyw" hint="„Systemowy” idzie za pulpitem, także po zmianie o zmierzchu">
+                <Choice
+                  value={look.theme}
+                  options={[["system", "Systemowy"], ["dark", "Ciemny"], ["light", "Jasny"]]}
+                  onChange={(value) => void patch({ "appearance.theme": value })}
                 />
-              ))}
-            </div>
-          </Row>
-          <Row label="Intensywność szkła" hint="Do zera, jeśli wolisz płaskie tło">
-            <Slider
-              value={look.glass}
-              min={0}
-              max={1}
-              step={0.1}
-              onCommit={(value) => void patch({ "appearance.glass": value })}
-            />
-          </Row>
-          <Row label="Wielkość tekstu">
-            <Slider
-              value={look.text_scale}
-              min={0.9}
-              max={1.4}
-              step={0.05}
-              onCommit={(value) => void patch({ "appearance.text_scale": value })}
-            />
-          </Row>
-          <Row label="Gęstość" hint="Kompaktowo mieści więcej na małym ekranie">
-            <Choice
-              value={look.density}
-              options={[
-                ["comfortable", "Swobodnie"],
-                ["compact", "Kompaktowo"],
-              ]}
-              onChange={(value) => void patch({ "appearance.density": value })}
-            />
-          </Row>
-          <Row label="Animacje" hint="„Systemowe” respektuje ustawienie dostępności">
-            <Choice
-              value={look.animation}
-              options={[
-                ["system", "Systemowe"],
-                ["full", "Pełne"],
-                ["off", "Wyłączone"],
-              ]}
-              onChange={(value) => void patch({ "appearance.animation": value })}
-            />
-          </Row>
-          <Row label="Wysoki kontrast" hint="Rezygnuje z przezroczystości na rzecz czytelności">
-            <Toggle
-              on={look.high_contrast}
-              onChange={(value) => void patch({ "appearance.high_contrast": value })}
-            />
-          </Row>
-        </Glass>
-      </Section>
+              </Row>
+              <Row label="Kolor akcentu">
+                <div className="swatches">
+                  {Object.entries(ACCENTS).map(([id, hsl]) => (
+                    <button
+                      key={id}
+                      aria-label={ACCENT_NAMES[id] ?? id}
+                      aria-pressed={look.accent === id}
+                      onClick={() => void patch({ "appearance.accent": id })}
+                      className="swatch no-drag"
+                      data-active={look.accent === id || undefined}
+                      style={{ background: `hsl(${hsl})` }}
+                    />
+                  ))}
+                  <label className="swatch swatch--custom" title="Własny kolor">
+                    <input
+                      type="color"
+                      aria-label="Własny kolor akcentu"
+                      value={look.accent.startsWith("#") ? look.accent : "#22c1e8"}
+                      onChange={(event) =>
+                        void patch({ "appearance.accent": event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              </Row>
+              <Row label="Intensywność szkła" hint="Do zera, jeśli wolisz płaskie tło">
+                <Slider
+                  value={look.glass}
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  onCommit={(value) => void patch({ "appearance.glass": value })}
+                />
+              </Row>
+              <Row label="Wielkość tekstu" hint="Składa się ze skalowaniem Windows">
+                <Slider
+                  value={look.text_scale}
+                  min={0.9}
+                  max={1.4}
+                  step={0.05}
+                  onCommit={(value) => void patch({ "appearance.text_scale": value })}
+                />
+              </Row>
+              <Row label="Gęstość" hint="Kompaktowo mieści więcej na małym ekranie">
+                <Choice
+                  value={look.density}
+                  options={[["comfortable", "Swobodnie"], ["compact", "Kompaktowo"]]}
+                  onChange={(value) => void patch({ "appearance.density": value })}
+                />
+              </Row>
+              <Row label="Nawigacja" hint="„Automatycznie” zwija się, gdy okno jest wąskie">
+                <Choice
+                  value={look.navigation}
+                  options={[["auto", "Automatycznie"], ["labels", "Z opisami"], ["rail", "Ikony"]]}
+                  onChange={(value) => void patch({ "appearance.navigation": value })}
+                />
+              </Row>
+              <Row label="Animacje" hint="„Systemowe” respektuje ustawienie dostępności">
+                <Choice
+                  value={look.animation}
+                  options={[["system", "Systemowe"], ["full", "Pełne"], ["off", "Wyłączone"]]}
+                  onChange={(value) => void patch({ "appearance.animation": value })}
+                />
+              </Row>
+              <Row label="Wskaźnik stanu" hint="Kropka przy nazwie — jak bardzo ma się ruszać">
+                <Choice
+                  value={look.orb}
+                  options={[["full", "Pełny"], ["simple", "Prosty"], ["off", "Bez ruchu"]]}
+                  onChange={(value) => void patch({ "appearance.orb": value })}
+                />
+              </Row>
+              <Row label="Wysoki kontrast" hint="Rezygnuje z przezroczystości na rzecz czytelności">
+                <Toggle
+                  on={look.high_contrast}
+                  onChange={(value) => void patch({ "appearance.high_contrast": value })}
+                />
+              </Row>
+              <Row
+                label="Dźwięki"
+                hint="Silnik jeszcze ich nie odtwarza — ustawienie czeka na tę część"
+              >
+                <Toggle
+                  on={look.sounds}
+                  onChange={(value) => void patch({ "appearance.sounds": value })}
+                />
+              </Row>
+            </Glass>
+          </Section>
+        )}
 
-      <Section title="Zachowanie">
-        <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
-          <Row label="Szczegółowe raporty" hint="Pokazuj kroki, nie tylko wynik">
-            <Toggle
-              on={engine?.dev.verbose ?? false}
-              onChange={(value) => void patch({ "dev.verbose": value })}
-            />
-          </Row>
-          <Row label="Tryb developerski" hint="Plany, prompty, surowe wyniki narzędzi">
-            <Toggle
-              on={engine?.dev.developer_mode ?? false}
-              onChange={(value) => void patch({ "dev.developer_mode": value })}
-            />
-          </Row>
-        </Glass>
-      </Section>
+        {category === "models" && <ModelsSettings />}
 
-      {/* Saving is silent but never invisible: a small confirmation that fades. */}
-      <motion.div
-        initial={false}
-        animate={{ opacity: saved ? 1 : 0, y: saved ? 0 : 6 }}
-        transition={base}
-        className="tiny"
-        style={{ color: "hsl(var(--state-ok))", height: 18 }}
-      >
-        {saved ? "Zapisane." : ""}
+        {category === "privacy" && (
+          <Section title="Pamięć i prywatność">
+            <Glass className="glass--card rows">
+              <Row label="Prywatność modeli" hint="Gdzie wolno wysyłać treść zadań">
+                <Choice
+                  value={engine?.models.privacy ?? "balanced"}
+                  options={[
+                    ["local_only", "Tylko lokalnie"],
+                    ["prefer_local", "Najpierw lokalnie"],
+                    ["balanced", "Zrównoważona"],
+                    ["quality_first", "Jakość"],
+                  ]}
+                  onChange={(value) => void patch({ "models.privacy": value })}
+                />
+              </Row>
+              <Row label="Wolno korzystać z chmury">
+                <Toggle
+                  on={engine?.models.allow_cloud ?? true}
+                  onChange={(value) => void patch({ "models.allow_cloud": value })}
+                />
+              </Row>
+            </Glass>
+            <p className="tiny soft">
+              Co pamiętam i co trzymam w sejfie, obejrzysz i skasujesz w zakładce
+              Pamięć. Sekrety nigdy nie trafiają do modelu.
+            </p>
+          </Section>
+        )}
+
+        {category === "notifications" && (
+          <Section title="Powiadomienia">
+            <Glass className="glass--card rows">
+              <Row label="Godziny ciszy">
+                <Toggle
+                  on={quiet?.quiet_hours.enabled ?? true}
+                  onChange={(value) => void patch({ "notifications.quiet_hours.enabled": value })}
+                />
+              </Row>
+              <Row label="Od">
+                <input
+                  className="field"
+                  type="time"
+                  value={quiet?.quiet_hours.start ?? "23:00"}
+                  onChange={(event) =>
+                    void patch({ "notifications.quiet_hours.start": event.target.value })
+                  }
+                  aria-label="Cisza od"
+                />
+              </Row>
+              <Row label="Do">
+                <input
+                  className="field"
+                  type="time"
+                  value={quiet?.quiet_hours.end ?? "08:00"}
+                  onChange={(event) =>
+                    void patch({ "notifications.quiet_hours.end": event.target.value })
+                  }
+                  aria-label="Cisza do"
+                />
+              </Row>
+              <Row label="Cisza podczas grania" hint="Ustawienie działa; wykrywanie gry jeszcze nie">
+                <Toggle
+                  on={quiet?.suppress_while_gaming ?? true}
+                  onChange={(value) =>
+                    void patch({ "notifications.suppress_while_gaming": value })
+                  }
+                />
+              </Row>
+              <Row label="Najwyżej na godzinę">
+                <Slider
+                  value={quiet?.max_per_hour ?? 6}
+                  min={1}
+                  max={20}
+                  step={1}
+                  onCommit={(value) => void patch({ "notifications.max_per_hour": value })}
+                />
+              </Row>
+            </Glass>
+          </Section>
+        )}
+
+        {category === "security" && (
+          <Section title="Bezpieczeństwo">
+            <p className="tiny soft">
+              Te reguły obowiązują niezależnie od osobowości i od tego, o co
+              poprosisz w rozmowie.
+            </p>
+            <Glass className="glass--card rows">
+              <Row label="Mogę prosić o uprawnienia administratora">
+                <Toggle
+                  on={engine?.capabilities.policy.allow_admin_elevation ?? true}
+                  onChange={(value) => void patch({ "autonomy.allow_admin_elevation": value })}
+                />
+              </Row>
+              <Row label="Pytam przed" hint="Skutki, których nie zrobię bez Twojej zgody">
+                <div className="message__effects">
+                  {(engine?.capabilities.policy.confirm_effects ?? []).map((effect) => (
+                    <span key={effect} className="tiny effect-chip effect-chip--danger">
+                      {effect}
+                    </span>
+                  ))}
+                </div>
+              </Row>
+            </Glass>
+          </Section>
+        )}
+
+        {category === "advanced" && (
+          <Section title="Zaawansowane">
+            <Glass className="glass--card rows">
+              <Row label="Szczegółowe raporty" hint="Pokazuj kroki, nie tylko wynik">
+                <Toggle
+                  on={engine?.dev.verbose ?? false}
+                  onChange={(value) => void patch({ "dev.verbose": value })}
+                />
+              </Row>
+              <Row
+                label="Tryb developerski"
+                hint="Odblokowuje Diagnostykę: narzędzia, dziennik, surowe dane modeli"
+              >
+                <Toggle
+                  on={engine?.dev.developer_mode ?? false}
+                  onChange={(value) => void patch({ "dev.developer_mode": value })}
+                />
+              </Row>
+              <Row label="Równolegle zadań">
+                <Slider
+                  value={engine?.tasks.max_parallel ?? 4}
+                  min={1}
+                  max={12}
+                  step={1}
+                  onCommit={(value) => void patch({ "tasks.max_parallel": value })}
+                />
+              </Row>
+            </Glass>
+          </Section>
+        )}
+
+        {category === "voice" && (
+          <Section title="Głos">
+            <Glass className="glass--card rows unavailable">
+              <p>
+                <strong>Jeszcze nie działa.</strong>
+              </p>
+              <p className="tiny soft">
+                Rozpoznawanie mowy i mówienie nie są zaimplementowane — w silniku
+                nie ma jeszcze tej ścieżki. Przycisk mikrofonu w polu poleceń jest
+                z tego powodu wyłączony, a nie „chwilowo niedostępny”. Ustawienia
+                głosu pojawią się tutaj, kiedy będzie czym sterować.
+              </p>
+            </Glass>
+          </Section>
+        )}
+
+        <div className="settings__status" aria-live="polite">
+          {problem ? (
+            <span className="tiny" style={{ color: "hsl(var(--state-error))" }}>
+              {problem}
+            </span>
+          ) : (
+            <motion.span
+              initial={false}
+              animate={{ opacity: saved ? 1 : 0 }}
+              transition={base}
+              className="tiny"
+              style={{ color: "hsl(var(--state-ok))" }}
+            >
+              {saved ? "Zapisane." : ""}
+            </motion.span>
+          )}
+        </div>
       </motion.div>
-    </motion.div>
+    </div>
   );
 }
 

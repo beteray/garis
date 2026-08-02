@@ -5,57 +5,45 @@
  * carries on, and reopening shows the true state because the first WebSocket
  * frame is a full snapshot.
  *
- * View changes use a shared layout, so panels move rather than blink.
+ * The shell owns three things and delegates everything else: which route is
+ * showing, what shape the navigation is in, and what GARIS is currently doing.
+ * That last one is computed in `lib/runtimeState.ts` from measured facts and
+ * passed down, so no screen derives its own idea of the agent's state.
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
-import { applyAppearance, watchSystemAppearance } from "./lib/appearance";
+import { useEffect, useMemo, useState } from "react";
 import type { Link } from "./lib/api";
-import { GarisApi, classify, discover, inTauri, restartEngine } from "./lib/api";
-import {
-  EASE,
-  base,
-  panelVariants,
-  prefersReducedMotion,
-  quick,
-  reducedPanelVariants,
-  spring,
-} from "./lib/motion";
-import type { View } from "./lib/store";
+import { GarisApi, classify, discover } from "./lib/api";
+import { applyAppearance, watchSystemAppearance } from "./lib/appearance";
+import { panelVariants, prefersReducedMotion, reducedPanelVariants } from "./lib/motion";
+import { navShape, routesFor } from "./lib/nav";
+import type { Route } from "./lib/nav";
+import { runtimeState } from "./lib/runtimeState";
 import { useStore } from "./lib/store";
-import { ApprovalBadge, ApprovalLayer } from "./components/Approvals";
-import { Composer } from "./components/Composer";
-import { Conversation } from "./components/Conversation";
+import { useWindowSize } from "./lib/useWindowSize";
+import { ApprovalLayer } from "./components/Approvals";
+import { ConnectionsView } from "./components/Connections";
+import { DeveloperView } from "./components/Developer";
+import { Home } from "./components/Home";
+import { LinkFailure, LinkPill } from "./components/Link";
+import { MemoryView } from "./components/Memory";
+import { Nav, NavButton } from "./components/Nav";
 import { Onboarding } from "./components/Onboarding";
-import { DevicesView, DiagnosticsView, MemoryView, SubscriptionsView } from "./components/Panels";
-import { Orb, STATE_LABELS } from "./components/Orb";
+import { Presence } from "./components/Presence";
 import { SettingsView } from "./components/Settings";
 import { TasksView } from "./components/Tasks";
-import { AnimatedNumber, Glass } from "./components/ui";
-
-const NAV: [View, string, string][] = [
-  ["home", "Start", "◎"],
-  ["conversation", "Rozmowa", "💬"],
-  ["tasks", "Zadania", "◷"],
-  ["memory", "Pamięć", "🧠"],
-  ["devices", "Urządzenia", "🖥"],
-  ["subscriptions", "Subskrypcje", "✦"],
-  ["settings", "Ustawienia", "⚙"],
-];
+import { Glass } from "./components/ui";
 
 export default function App() {
-  // One selector per value. `useStore()` without a selector subscribes to the
-  // whole store, so every progress line from every running task would re-render
-  // the entire tree — the exact opposite of the 60 fps requirement.
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const agentState = useStore((s) => s.agentState);
-  const level = useStore((s) => s.level);
   const engine = useStore((s) => s.engine);
   const connection = useStore((s) => s.connection);
   const approvals = useStore((s) => s.approvals);
   const tasks = useStore((s) => s.tasks);
+  const sending = useStore((s) => s.sending);
   const setApi = useStore((s) => s.setApi);
   const handleEvent = useStore((s) => s.handleEvent);
   const setConnection = useStore((s) => s.setConnection);
@@ -65,6 +53,8 @@ export default function App() {
   const [onboarding, setOnboarding] = useState(false);
   const [link, setLink] = useState<Link>({ state: "starting" });
   const [attempt, setAttempt] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { width } = useWindowSize();
   const reduced = prefersReducedMotion();
 
   useEffect(() => {
@@ -125,160 +115,127 @@ export default function App() {
   }, [engine]);
 
   // The machine can change its mind while the window is open — the desktop
-  // theme flips at sunset, or someone turns on "reduce motion" mid-task. With
-  // theme: "system" that has to land immediately, not at the next restart.
+  // theme flips at sunset, or someone turns on "reduce motion" mid-task.
   useEffect(
     () => watchSystemAppearance(() => applyAppearance(engine?.appearance ?? {})),
     [engine],
   );
 
-  const activeCount = tasks.filter((task) =>
-    ["pending", "running", "blocked"].includes(task.state),
-  ).length;
+  const destinations = routesFor(engine?.dev.developer_mode ?? false);
+  const shape = navShape(engine?.appearance.navigation ?? "auto", width);
+
+  // A route that stops existing (developer mode turned off) must not leave the
+  // window on a blank screen.
+  useEffect(() => {
+    if (!destinations.some((destination) => destination.id === view)) setView("home");
+  }, [destinations, view, setView]);
+
+  const state = useMemo(
+    () =>
+      runtimeState({
+        link,
+        agent: agentState,
+        sending,
+        pendingApprovals: approvals.length,
+        providers: engine?.models.providers ?? [],
+        quietHours: engine?.notifications.quiet_hours ?? null,
+      }),
+    [link, agentState, sending, approvals.length, engine],
+  );
+
+  const badges: Partial<Record<Route, number>> = {
+    tasks: tasks.filter((task) => task.state === "blocked").length,
+  };
+  const pending = Object.values(badges).reduce((total, value) => total + (value ?? 0), 0);
+
+  const header = (
+    <div className="shell__brand">
+      <Presence state={state} size={9} compact />
+      <div className="shell__brand-text">
+        <strong>GARIS</strong>
+        <span className="tiny soft">{engine?.version ? `v${engine.version}` : "…"}</span>
+      </div>
+    </div>
+  );
+
+  const footer = (
+    <LinkPill link={link} version={engine?.version} onRetry={() => setAttempt((n) => n + 1)} />
+  );
 
   return (
-    <div className="shell">
-      {/* ---------------------------------------------------------- navigation
-          Sizing lives in global.css, not here: the nav has to collapse to a
-          rail at 1024 CSS pixels — which is what a 1536-pixel laptop reports at
-          150% Windows scaling — and an inline width cannot answer to a media
-          query. */}
-      <Glass className="drag-region shell__nav">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "4px 8px 14px",
-          }}
-        >
-          <Orb state={agentState} level={level} size={34} />
-          <div style={{ display: "grid" }}>
-            <strong style={{ letterSpacing: "0.04em" }}>GARIS</strong>
-            {/* The status word changes with the orb — one truth, two renderings. */}
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={agentState}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={quick}
-                className="tiny soft"
-              >
-                {STATE_LABELS[agentState]}
-              </motion.span>
-            </AnimatePresence>
-          </div>
-        </div>
+    <div className="shell" data-nav={shape}>
+      {shape !== "overlay" && (
+        <Nav
+          shape={shape}
+          destinations={destinations}
+          current={view}
+          onNavigate={setView}
+          badges={badges}
+          header={header}
+          footer={footer}
+        />
+      )}
+      {shape === "overlay" && (
+        <Nav
+          shape="overlay"
+          destinations={destinations}
+          current={view}
+          onNavigate={setView}
+          badges={badges}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          header={header}
+          footer={footer}
+        />
+      )}
 
-        {NAV.map(([id, label, icon]) => {
-          const active = view === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setView(id)}
-              aria-label={label}
-              aria-current={active ? "page" : undefined}
-              title={label}
-              className="btn btn--quiet no-drag"
-              style={{
-                position: "relative",
-                justifyContent: "flex-start",
-                gap: 11,
-                padding: "9px 12px",
-                color: active ? "var(--ink)" : "var(--ink-soft)",
-              }}
-            >
-              {/* The selection pill slides between items — the same element,
-                  moved, not one hidden and another shown. */}
-              {active && (
-                <motion.span
-                  layoutId="nav-active"
-                  transition={spring}
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: "var(--radius-control)",
-                    background: "var(--glass-bg-strong)",
-                    border: "1px solid var(--glass-stroke)",
-                  }}
-                />
-              )}
-              <span style={{ position: "relative", zIndex: 1 }}>{icon}</span>
-              <span
-                className="nav-label"
-                style={{ position: "relative", zIndex: 1, flex: 1, textAlign: "left" }}
-              >
-                {label}
-              </span>
-              {id === "tasks" && activeCount > 0 && (
-                <span className="tiny" style={{ position: "relative", zIndex: 1 }}>
-                  <AnimatedNumber value={activeCount} />
-                </span>
-              )}
-              {id === "settings" && (
-                <span style={{ position: "relative", zIndex: 1 }}>
-                  <ApprovalBadge count={approvals.length} />
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        <div style={{ flex: 1 }} />
-
-        <button
-          onClick={() => setView("diagnostics")}
-          className="btn btn--quiet no-drag tiny"
-          style={{ justifyContent: "flex-start", gap: 11, padding: "8px 12px" }}
-        >
-          <span>◔</span> <span className="nav-label">Diagnostyka</span>
-        </button>
-
-        <LinkPill link={link} version={engine?.version} onRetry={() => setAttempt((n) => n + 1)} />
-      </Glass>
-
-      {/* --------------------------------------------------------------- stage */}
       <div className="shell__work">
+        {shape === "overlay" && (
+          <div className="shell__topbar glass drag-region">
+            <NavButton onOpen={() => setMenuOpen(true)} pending={pending} />
+            <Presence state={state} size={9} />
+            <div style={{ flex: 1 }} />
+            <LinkPill
+              link={link}
+              version={engine?.version}
+              onRetry={() => setAttempt((n) => n + 1)}
+            />
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
-          <motion.div
+          <motion.main
             key={view}
             variants={reduced ? reducedPanelVariants : panelVariants}
             initial="hidden"
             animate="visible"
             exit="exit"
-            style={{ flex: 1, minHeight: 0, display: "flex" }}
+            className="shell__stage"
+            // The route is announced, so a screen-reader user knows the view
+            // changed without hunting for what moved.
+            aria-label={destinations.find((d) => d.id === view)?.label}
           >
-            <Glass
-              className="scroll"
-              style={{ flex: 1, padding: "var(--pad-panel)", minHeight: 0 }}
-            >
+            <Glass className="shell__panel">
               {!ready ? (
                 <div className="skeleton" style={{ height: "100%" }} />
               ) : link.state !== "connected" && link.state !== "retrying" ? (
                 <LinkFailure link={link} onRetry={() => setAttempt((n) => n + 1)} />
               ) : view === "home" ? (
-                <HomeView />
-              ) : view === "conversation" ? (
-                <Conversation />
+                <Home state={state} />
               ) : view === "tasks" ? (
                 <TasksView />
               ) : view === "memory" ? (
                 <MemoryView />
-              ) : view === "devices" ? (
-                <DevicesView />
-              ) : view === "subscriptions" ? (
-                <SubscriptionsView />
+              ) : view === "connections" ? (
+                <ConnectionsView />
               ) : view === "settings" ? (
                 <SettingsView />
               ) : (
-                <DiagnosticsView />
+                <DeveloperView />
               )}
             </Glass>
-          </motion.div>
+          </motion.main>
         </AnimatePresence>
-
-        <Composer />
       </div>
 
       <ApprovalLayer />
@@ -289,207 +246,3 @@ export default function App() {
     </div>
   );
 }
-
-/** One line, one dot, one truth about whether the agent is reachable. */
-const LINK_WORDS: Record<Link["state"], { word: string; tone: string }> = {
-  starting: { word: "uruchamiam silnik…", tone: "var(--state-busy)" },
-  handshake: { word: "przedstawiamy się…", tone: "var(--state-busy)" },
-  connected: { word: "", tone: "var(--state-ok)" },
-  "engine-failed": { word: "silnik nie wystartował", tone: "var(--state-error)" },
-  "bad-token": { word: "token odrzucony", tone: "var(--state-error)" },
-  "no-response": { word: "silnik nie odpowiada", tone: "var(--state-error)" },
-  retrying: { word: "ponawiam…", tone: "var(--state-warn)" },
-};
-
-function LinkPill({
-  link,
-  version,
-  onRetry,
-}: {
-  link: Link;
-  version?: string;
-  onRetry: () => void;
-}) {
-  const { word, tone } = LINK_WORDS[link.state];
-  const live = link.state === "connected";
-  return (
-    <button
-      onClick={onRetry}
-      disabled={live}
-      className="btn btn--quiet no-drag tiny"
-      title={live ? "Połączono" : "Kliknij, żeby spróbować ponownie"}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 7,
-        padding: "6px 12px",
-        justifyContent: "flex-start",
-        opacity: live ? 0.7 : 1,
-        cursor: live ? "default" : "pointer",
-      }}
-    >
-      <motion.span
-        animate={{
-          opacity: live ? [0.6, 1, 0.6] : 1,
-          scale: live ? [1, 1.25, 1] : 1,
-        }}
-        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-        style={{ width: 7, height: 7, borderRadius: "50%", background: `hsl(${tone})`, flexShrink: 0 }}
-      />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {live ? `v${version ?? "?"}` : word}
-      </span>
-    </button>
-  );
-}
-
-/**
- * What the stage shows when there is no engine behind it.
- *
- * Deliberately not a spinner: every state here is one a person can act on, so
- * each one says what happened and offers the action that fixes it.
- */
-function LinkFailure({ link, onRetry }: { link: Link; onRetry: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const detail = "detail" in link ? link.detail : "";
-
-  const report = [
-    `stan: ${link.state}`,
-    `szczegóły: ${detail || "—"}`,
-    `powłoka: ${inTauri() ? "Tauri" : "przeglądarka"}`,
-    `adres: ${window.location.href}`,
-    `czas: ${new Date().toISOString()}`,
-  ].join("\n");
-
-  const restart = async () => {
-    setBusy(true);
-    try {
-      if (inTauri()) await restartEngine();
-    } finally {
-      setBusy(false);
-      onRetry();
-    }
-  };
-
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "grid",
-        placeContent: "center",
-        justifyItems: "center",
-        gap: 16,
-        textAlign: "center",
-        padding: 24,
-        maxWidth: 520,
-        margin: "0 auto",
-      }}
-    >
-      <div style={{ fontSize: 34, opacity: 0.5 }}>◍</div>
-      <div style={{ fontSize: 17, fontWeight: 550 }}>{LINK_WORDS[link.state].word}</div>
-      {detail && <p className="soft" style={{ margin: 0, lineHeight: 1.5 }}>{detail}</p>}
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-        <button className="btn" onClick={onRetry} disabled={busy}>
-          Spróbuj ponownie
-        </button>
-        {inTauri() && (
-          <button className="btn" onClick={restart} disabled={busy}>
-            {busy ? "Uruchamiam…" : "Uruchom silnik ponownie"}
-          </button>
-        )}
-        <button
-          className="btn btn--quiet"
-          onClick={() => {
-            void navigator.clipboard.writeText(report).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
-          }}
-        >
-          {copied ? "Skopiowano" : "Skopiuj diagnostykę"}
-        </button>
-      </div>
-
-      <p className="tiny faint" style={{ margin: 0, lineHeight: 1.5 }}>
-        Log silnika:&nbsp;
-        <code>%LOCALAPPDATA%\ai.garis.desktop\logs\engine.log</code>
-      </p>
-    </div>
-  );
-}
-
-function HomeView() {
-  const agentState = useStore((s) => s.agentState);
-  const level = useStore((s) => s.level);
-  const engine = useStore((s) => s.engine);
-  const tasks = useStore((s) => s.tasks);
-  const chat = useStore((s) => s.chat);
-
-  const active = tasks.filter((task) =>
-    ["pending", "running", "blocked"].includes(task.state),
-  );
-
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "grid",
-        gridTemplateRows: "1fr auto",
-        placeItems: "center",
-        gap: 18,
-      }}
-    >
-      <div style={{ display: "grid", placeItems: "center", gap: 14 }}>
-        <motion.div
-          initial={{ scale: 0.85, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ ...spring, delay: 0.05 }}
-        >
-          <Orb state={agentState} level={level} size={300} />
-        </motion.div>
-
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={agentState}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={base}
-            style={{ textAlign: "center", display: "grid", gap: 4 }}
-          >
-            <div style={{ fontSize: 17, fontWeight: 550 }}>
-              {greeting(engine?.identity.address_as)}
-            </div>
-            <div className="soft tiny">
-              {active.length > 0
-                ? `${active.length} ${active.length === 1 ? "zadanie" : "zadania"} w toku`
-                : STATE_LABELS[agentState]}
-            </div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {chat.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...base, delay: 0.1 }}
-          style={{ width: "100%", maxWidth: 720 }}
-        >
-          <Conversation compact />
-        </motion.div>
-      )}
-    </div>
-  );
-}
-
-function greeting(name?: string): string {
-  const hour = new Date().getHours();
-  const part =
-    hour < 5 ? "Dobrej nocy" : hour < 12 ? "Dzień dobry" : hour < 18 ? "Cześć" : "Dobry wieczór";
-  return name ? `${part}, ${name}.` : `${part}.`;
-}
-
-export const appEase = EASE;

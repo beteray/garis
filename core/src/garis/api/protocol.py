@@ -145,6 +145,10 @@ def state_view(garis: Any) -> dict[str, Any]:
             "secrets": len(garis.vault.list()),
         },
         "models": garis.router.describe(),
+        # Settings the window renders as controls. Sent whole rather than made
+        # of separate round trips, so one frame is one consistent view.
+        "tasks": {"max_parallel": config.tasks.max_parallel},
+        "autostart": config.autostart,
         "notifications": garis.notifications.describe(),
         "voice_runtime": garis.voice.describe(),
         "capabilities": garis.runtime.describe_capabilities(),
