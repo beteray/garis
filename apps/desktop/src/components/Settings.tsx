@@ -9,6 +9,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { ACCENTS, DEFAULT_APPEARANCE } from "../lib/appearance";
 import { base, quick, staggerContainer } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Glass, Pill, Section } from "./ui";
@@ -95,6 +96,84 @@ function Toggle({
   );
 }
 
+/** A short, mutually exclusive set. Segmented rather than a dropdown: every
+ *  option is visible, which is what makes "co to zmieni" answerable. */
+function Choice({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: readonly (readonly [string, string])[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div role="radiogroup" style={{ display: "flex", gap: 4 }}>
+      {options.map(([id, label]) => (
+        <button
+          key={id}
+          role="radio"
+          aria-checked={value === id}
+          onClick={() => onChange(id)}
+          className="btn btn--quiet no-drag"
+          style={{
+            padding: "5px 11px",
+            fontSize: "var(--text-small)",
+            background: value === id ? "var(--accent-soft)" : "transparent",
+            borderColor: value === id ? "var(--accent-line)" : "transparent",
+            color: value === id ? "var(--ink)" : "var(--ink-soft)",
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Commits on release, not on every pixel: dragging a slider must not fire
+ *  fifty saves, fifty writes to disk and fifty config.changed events. */
+function Slider({
+  value,
+  min,
+  max,
+  step,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onCommit: (value: number) => void;
+}) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => setLocal(value), [value]);
+  return (
+    <input
+      type="range"
+      className="no-drag"
+      min={min}
+      max={max}
+      step={step}
+      value={local}
+      onChange={(event) => setLocal(Number(event.target.value))}
+      onPointerUp={() => local !== value && onCommit(local)}
+      onKeyUp={() => local !== value && onCommit(local)}
+      style={{ width: 148, accentColor: "var(--accent)" }}
+    />
+  );
+}
+
+const ACCENT_NAMES: Record<string, string> = {
+  cyan: "Cyjan",
+  blue: "Niebieski",
+  violet: "Fiolet",
+  teal: "Morski",
+  green: "Zielony",
+  amber: "Bursztyn",
+  rose: "Róż",
+};
+
 export function SettingsView() {
   const engine = useStore((s) => s.engine);
   const api = useStore((s) => s.api);
@@ -136,6 +215,8 @@ export function SettingsView() {
   };
 
   const has = (name: string) => secrets.some((secret) => secret.name === name);
+  // Defaults until the first frame arrives, so the controls are never blank.
+  const look = engine?.appearance ?? DEFAULT_APPEARANCE;
 
   return (
     <motion.div
@@ -243,6 +324,91 @@ export function SettingsView() {
               )}
             </Row>
           ))}
+        </Glass>
+      </Section>
+
+      <Section title="Wygląd">
+        <Glass style={{ padding: "6px 16px", borderRadius: "var(--radius-card)" }}>
+          <Row label="Motyw" hint="„Systemowy” idzie za pulpitem, także po zmianie o zmierzchu">
+            <Choice
+              value={look.theme}
+              options={[
+                ["system", "Systemowy"],
+                ["dark", "Ciemny"],
+                ["light", "Jasny"],
+              ]}
+              onChange={(value) => void patch({ "appearance.theme": value })}
+            />
+          </Row>
+          <Row label="Kolor akcentu">
+            <div style={{ display: "flex", gap: 7 }}>
+              {Object.entries(ACCENTS).map(([name, hsl]) => (
+                <button
+                  key={name}
+                  aria-label={ACCENT_NAMES[name] ?? name}
+                  aria-pressed={look.accent === name}
+                  onClick={() => void patch({ "appearance.accent": name })}
+                  className="no-drag"
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: "var(--radius-pill)",
+                    background: `hsl(${hsl})`,
+                    border:
+                      look.accent === name
+                        ? "2px solid var(--ink)"
+                        : "1px solid var(--glass-stroke)",
+                    cursor: "pointer",
+                  }}
+                />
+              ))}
+            </div>
+          </Row>
+          <Row label="Intensywność szkła" hint="Do zera, jeśli wolisz płaskie tło">
+            <Slider
+              value={look.glass}
+              min={0}
+              max={1}
+              step={0.1}
+              onCommit={(value) => void patch({ "appearance.glass": value })}
+            />
+          </Row>
+          <Row label="Wielkość tekstu">
+            <Slider
+              value={look.text_scale}
+              min={0.9}
+              max={1.4}
+              step={0.05}
+              onCommit={(value) => void patch({ "appearance.text_scale": value })}
+            />
+          </Row>
+          <Row label="Gęstość" hint="Kompaktowo mieści więcej na małym ekranie">
+            <Choice
+              value={look.density}
+              options={[
+                ["comfortable", "Swobodnie"],
+                ["compact", "Kompaktowo"],
+              ]}
+              onChange={(value) => void patch({ "appearance.density": value })}
+            />
+          </Row>
+          <Row label="Animacje" hint="„Systemowe” respektuje ustawienie dostępności">
+            <Choice
+              value={look.animation}
+              options={[
+                ["system", "Systemowe"],
+                ["full", "Pełne"],
+                ["off", "Wyłączone"],
+              ]}
+              onChange={(value) => void patch({ "appearance.animation": value })}
+            />
+          </Row>
+          <Row label="Wysoki kontrast" hint="Rezygnuje z przezroczystości na rzecz czytelności">
+            <Toggle
+              on={look.high_contrast}
+              onChange={(value) => void patch({ "appearance.high_contrast": value })}
+            />
+          </Row>
         </Glass>
       </Section>
 

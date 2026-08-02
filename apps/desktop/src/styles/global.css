@@ -21,7 +21,11 @@ body {
   color: var(--ink);
   font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system,
     BlinkMacSystemFont, "Inter", system-ui, sans-serif;
-  font-size: 14.5px;
+  /* Follows the text-size setting. Windows display scaling (100–175%) already
+   * multiplies the CSS pixel, so the two compose instead of fighting: at 150%
+   * with "duży tekst" everything is simply larger, and nothing is clipped
+   * because no measurement in this file is an absolute pixel count. */
+  font-size: calc(14.5px * var(--text-scale));
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -306,10 +310,15 @@ select {
   color: var(--ink-faint);
 }
 
-/* Keyboard users must always see where they are. */
+/* Keyboard users must always see where they are. Defined once, here. */
 :focus-visible {
-  outline: 2px solid hsl(var(--state-working) / 0.75);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+:root[data-contrast="high"] :focus-visible {
+  outline-width: 3px;
 }
 
 /* --- text ------------------------------------------------------------- */
@@ -398,4 +407,88 @@ p { margin: 0; }
 .no-drag {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* ------------------------------------------------------------------ the shell
+ *
+ * Three widths, and the smallest one is a promise: 1024×700 is the minimum
+ * window, and everything must still be reachable there — not merely present.
+ * At 150% Windows scaling a 1536-pixel laptop reports 1024 CSS pixels, so this
+ * breakpoint is not a phone case. It is the common case.
+ *
+ * The nav is what gives: labels first, then the rail. Nothing is ever removed,
+ * because a feature you cannot reach at one window size is a feature that does
+ * not exist. */
+.shell {
+  display: flex;
+  height: 100%;
+  padding: var(--gap);
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.shell__nav {
+  width: var(--nav-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--pad-card);
+  overflow-y: auto;
+}
+
+/* min-width: 0 is load-bearing on a flex child: without it the workspace
+ * refuses to shrink below its content and pushes the nav off screen. */
+.shell__work {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* The rail: icons only, labels become tooltips and accessible names. Chosen by
+ * the user (appearance.navigation) or forced by the window being narrow. */
+:root[data-navigation="rail"] .shell__nav,
+.shell__nav[data-rail="true"] {
+  width: auto;
+}
+
+:root[data-navigation="rail"] .nav-label,
+.shell__nav[data-rail="true"] .nav-label {
+  display: none;
+}
+
+@media (max-width: 1120px) {
+  .shell {
+    padding: calc(var(--gap) * 0.7);
+    gap: calc(var(--gap) * 0.7);
+  }
+
+  .shell__nav {
+    width: auto;
+  }
+
+  .shell__nav .nav-label {
+    display: none;
+  }
+}
+
+/* Short windows, which 175% scaling produces on any ordinary laptop: the
+ * vertical rhythm compresses rather than the content scrolling away. */
+@media (max-height: 720px) {
+  :root {
+    --density: 0.85;
+  }
+}
+
+/* Very wide is not an excuse to stretch a column of text to a metre. The
+ * workspace stays readable and centres; the room around it is the wallpaper,
+ * which is the point of glass. */
+@media (min-width: 1800px) {
+  .shell__work {
+    max-width: 1500px;
+    margin-inline: auto;
+    width: 100%;
+  }
 }

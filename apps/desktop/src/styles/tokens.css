@@ -94,8 +94,14 @@
   --state-busy: 210 90% 66%;        /* still on its way — not a problem yet */
   --state-warn: 38 92% 62%;         /* lost the socket, coming back */
 
-  --accent: hsl(var(--state-working));
-  --accent-soft: hsl(var(--state-working) / 0.16);
+  /* --- accent ---------------------------------------------------------
+   * Set by lib/appearance.ts from appearance.accent — a preset name or the
+   * user's own #rrggbb, already converted. The fallback is here so the window
+   * is never colourless in the frame before the engine answers. */
+  --accent-hsl: var(--state-working);
+  --accent: hsl(var(--accent-hsl));
+  --accent-soft: hsl(var(--accent-hsl) / 0.16);
+  --accent-line: hsl(var(--accent-hsl) / 0.34);
 
   /* --- motion ---------------------------------------------------------
    * One easing curve for almost everything. It is the iOS deceleration feel:
@@ -110,16 +116,89 @@
   --dur-slow: 520ms;
   --dur-ambient: 4200ms;
 
-  /* --- layout --------------------------------------------------------- */
-  --nav-width: 232px;
-  --gap: 16px;
-  --pad-panel: 22px;
+  /* --- layout ---------------------------------------------------------
+   * Density and text scale are user settings, so every measurement that should
+   * follow them is derived rather than typed. A padding written as a literal
+   * somewhere in a component is a padding that ignores "kompaktowo". */
+  --density: 1;
+  --text-scale: 1;
+
+  --nav-width: calc(232px * var(--density));
+  --gap: calc(16px * var(--density));
+  --pad-panel: calc(22px * var(--density));
+  --pad-card: calc(14px * var(--density));
+  --row-height: calc(38px * var(--density));
+
+  --text-base: calc(14px * var(--text-scale));
+  --text-small: calc(12.5px * var(--text-scale));
+  --text-tiny: calc(11px * var(--text-scale));
+  --text-title: calc(19px * var(--text-scale));
+
+  /* --- materials -------------------------------------------------------
+   * The tiers above say how glass is *made*; these say what each one is *for*.
+   * Components name the purpose, never the recipe — so "przyciemnij panele"
+   * is one edit here instead of a search for every backdrop-filter.
+   */
+  --material-atmosphere: transparent;          /* the room behind everything */
+  --material-nav: var(--glass-fill);           /* always present, must recede */
+  --material-workspace: var(--glass-fill);     /* the panel being worked in */
+  --material-input: var(--glass-fill-sunken);  /* things you type into sink in */
+  --material-card: var(--glass-fill);          /* one item among many */
+  --material-modal: var(--glass-fill-raised);  /* takes over, so it lifts */
+  --material-approval: var(--glass-fill-raised); /* a decision, never ambient */
+  --material-diagnostic: var(--glass-fill-sunken); /* machinery, deliberately flat */
+
+  --blur-nav: var(--glass-blur);
+  --blur-workspace: var(--glass-blur);
+  --blur-card: var(--glass-blur-card);
+  --blur-modal: calc(var(--glass-blur) * 1.25);
 
   color-scheme: dark light;
 }
 
+:root[data-density="compact"] {
+  --density: 0.82;
+}
+
+/* High contrast is not "darker glass". Translucency is the thing that hurts
+ * legibility, so it is the thing that goes: opaque surfaces, hard edges, ink at
+ * full strength. The layout does not move. */
+:root[data-contrast="high"] {
+  --glass-strength: 0;
+  --glass-fill: hsl(220 24% 9%);
+  --glass-fill-raised: hsl(220 24% 13%);
+  --glass-fill-sunken: hsl(220 24% 6%);
+  --glass-bg: hsl(220 24% 11%);
+  --glass-bg-strong: hsl(220 24% 15%);
+  --glass-bg-hover: hsl(220 24% 19%);
+  --glass-stroke: rgba(255, 255, 255, 0.42);
+  --glass-stroke-strong: rgba(255, 255, 255, 0.68);
+  --ink: #fff;
+  --ink-soft: rgba(255, 255, 255, 0.88);
+  --ink-faint: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-contrast="high"][data-theme="light"] {
+  --glass-fill: #fff;
+  --glass-fill-raised: #fff;
+  --glass-fill-sunken: hsl(220 20% 95%);
+  --glass-bg: #fff;
+  --glass-bg-strong: hsl(220 20% 96%);
+  --glass-bg-hover: hsl(220 20% 92%);
+  --glass-stroke: rgba(12, 16, 22, 0.48);
+  --glass-stroke-strong: rgba(12, 16, 22, 0.76);
+  --ink: #000;
+  --ink-soft: rgba(12, 16, 22, 0.86);
+  --ink-faint: rgba(12, 16, 22, 0.70);
+}
+
 /* Light theme is first-class, not an afterthought: glass over a bright desktop
- * needs darker ink and a *lower* white alpha, or it turns into milk. */
+ * needs darker ink and a *lower* white alpha, or it turns into milk.
+ *
+ * Written once. `lib/appearance.ts` resolves "system" against the OS and always
+ * stamps data-theme, so there is no second copy under a media query to drift
+ * away from this one — and an explicit "jasny" can beat a dark desktop, which a
+ * media query could never do. */
 :root[data-theme="light"] {
   --glass-fill: linear-gradient(
     150deg,
@@ -157,49 +236,16 @@
   --ink-faint: rgba(12, 16, 22, 0.38);
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --glass-fill: linear-gradient(
-      150deg,
-      rgba(255, 255, 255, 0.78),
-      rgba(255, 255, 255, 0.58) 45%,
-      rgba(255, 255, 255, 0.50) 70%,
-      rgba(255, 255, 255, 0.66)
-    );
-    --glass-fill-raised: linear-gradient(
-      150deg,
-      rgba(255, 255, 255, 0.90),
-      rgba(255, 255, 255, 0.74)
-    );
-    --glass-fill-sunken: linear-gradient(150deg, rgba(12, 16, 22, 0.05), rgba(12, 16, 22, 0.02));
-    --glass-bg: rgba(255, 255, 255, 0.58);
-    --glass-bg-strong: rgba(255, 255, 255, 0.72);
-    --glass-bg-hover: rgba(255, 255, 255, 0.84);
-    --glass-stroke: rgba(12, 16, 22, 0.07);
-    --glass-stroke-strong: rgba(12, 16, 22, 0.13);
-    --glass-highlight: rgba(255, 255, 255, 0.95);
-    --shadow-panel:
-      0 1px 1px rgba(16, 24, 40, 0.05),
-      0 10px 30px rgba(16, 24, 40, 0.10),
-      inset 0 1px 0 rgba(255, 255, 255, 0.80);
-    --shadow-card:
-      0 1px 1px rgba(16, 24, 40, 0.04),
-      0 4px 14px rgba(16, 24, 40, 0.07),
-      inset 0 1px 0 rgba(255, 255, 255, 0.70);
-    --shadow-lifted:
-      0 2px 4px rgba(16, 24, 40, 0.08),
-      0 18px 44px rgba(16, 24, 40, 0.14),
-      inset 0 1px 0 rgba(255, 255, 255, 0.90);
-    --ink: rgba(12, 16, 22, 0.92);
-    --ink-soft: rgba(12, 16, 22, 0.60);
-    --ink-faint: rgba(12, 16, 22, 0.38);
-  }
-}
-
 /* Accessibility beats effect, always. Motion collapses to opacity; the layout
- * and every affordance stay exactly where they were. */
+ * and every affordance stay exactly where they were.
+ *
+ * Two triggers, because they answer different questions. data-motion is the
+ * resolved answer — the OS preference *or* the user choosing stillness inside
+ * GARIS, decided once in lib/appearance.ts. The media query is the same rule
+ * for the frame before that code has run: a person who asked the OS for calm
+ * must not get one spin of the orb as a welcome. */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  :root:not([data-motion="full"]) {
     --dur-instant: 1ms;
     --dur-fast: 1ms;
     --dur-base: 1ms;
@@ -207,12 +253,29 @@
     --dur-ambient: 1ms;
   }
 
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+:root[data-motion="off"] {
+  --dur-instant: 1ms;
+  --dur-fast: 1ms;
+  --dur-base: 1ms;
+  --dur-slow: 1ms;
+  --dur-ambient: 1ms;
+}
+
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

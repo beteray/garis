@@ -20,6 +20,7 @@ import type {
   Tool,
 } from "./api";
 import { GarisApi } from "./api";
+import { applyAppearance } from "./appearance";
 
 export type View =
   | "home"
@@ -148,11 +149,15 @@ export const useStore = create<Store>((set, get) => ({
     const store = get();
 
     switch (topic) {
-      case "state":
-        set({ engine: data as unknown as EngineState,
-              tasks: (data as unknown as EngineState).active_tasks ?? [] });
+      case "state": {
+        const engine = data as unknown as EngineState;
+        set({ engine, tasks: engine.active_tasks ?? [] });
+        // The look travels in the same frame as everything else, so the window
+        // never paints one theme and then corrects itself.
+        applyAppearance(engine.appearance ?? {});
         void store.refresh();
         return;
+      }
 
       case "agent.state":
         store.setAgentState((data.state as AgentState) ?? "idle");
@@ -197,6 +202,10 @@ export const useStore = create<Store>((set, get) => ({
         void store.refreshMemories();
         return;
 
+      case "config.changed":
+        void store.refresh();
+        return;
+
       default:
         break;
     }
@@ -226,6 +235,10 @@ export const useStore = create<Store>((set, get) => ({
         api.approvals(),
       ]);
       set({ engine, tasks: tasks.tasks, approvals: approvals.approvals });
+      // Settings can change from another window, from the file on disk, or from
+      // the settings screen. Every path ends here, so this is where the look is
+      // re-applied rather than in each of them.
+      applyAppearance(engine.appearance ?? {});
     } catch {
       /* the stream will trigger another refresh; a failed poll is not news */
     }

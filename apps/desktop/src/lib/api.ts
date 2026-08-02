@@ -6,6 +6,8 @@
  * comes back. Everything here is transport.
  */
 
+import type { Appearance } from "./appearance";
+
 export type AgentState =
   | "idle"
   | "listening"
@@ -150,6 +152,7 @@ export interface EngineState {
     voice_id: string;
   };
   dev: { verbose: boolean; developer_mode: boolean };
+  appearance: Appearance;
   counts: {
     active_tasks: number;
     pending_approvals: number;

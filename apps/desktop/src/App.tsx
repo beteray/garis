@@ -10,6 +10,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { applyAppearance, watchSystemAppearance } from "./lib/appearance";
 import type { Link } from "./lib/api";
 import { GarisApi, classify, discover, inTauri, restartEngine } from "./lib/api";
 import {
@@ -123,24 +124,26 @@ export default function App() {
     if (engine && !engine.identity.onboarded) setOnboarding(true);
   }, [engine]);
 
+  // The machine can change its mind while the window is open — the desktop
+  // theme flips at sunset, or someone turns on "reduce motion" mid-task. With
+  // theme: "system" that has to land immediately, not at the next restart.
+  useEffect(
+    () => watchSystemAppearance(() => applyAppearance(engine?.appearance ?? {})),
+    [engine],
+  );
+
   const activeCount = tasks.filter((task) =>
     ["pending", "running", "blocked"].includes(task.state),
   ).length;
 
   return (
-    <div style={{ display: "flex", height: "100%", padding: 14, gap: 14 }}>
-      {/* ---------------------------------------------------------- navigation */}
-      <Glass
-        className="drag-region"
-        style={{
-          width: "var(--nav-width)",
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          flexShrink: 0,
-        }}
-      >
+    <div className="shell">
+      {/* ---------------------------------------------------------- navigation
+          Sizing lives in global.css, not here: the nav has to collapse to a
+          rail at 1024 CSS pixels — which is what a 1536-pixel laptop reports at
+          150% Windows scaling — and an inline width cannot answer to a media
+          query. */}
+      <Glass className="drag-region shell__nav">
         <div
           style={{
             display: "flex",
@@ -174,6 +177,9 @@ export default function App() {
             <button
               key={id}
               onClick={() => setView(id)}
+              aria-label={label}
+              aria-current={active ? "page" : undefined}
+              title={label}
               className="btn btn--quiet no-drag"
               style={{
                 position: "relative",
@@ -199,7 +205,10 @@ export default function App() {
                 />
               )}
               <span style={{ position: "relative", zIndex: 1 }}>{icon}</span>
-              <span style={{ position: "relative", zIndex: 1, flex: 1, textAlign: "left" }}>
+              <span
+                className="nav-label"
+                style={{ position: "relative", zIndex: 1, flex: 1, textAlign: "left" }}
+              >
                 {label}
               </span>
               {id === "tasks" && activeCount > 0 && (
@@ -223,14 +232,14 @@ export default function App() {
           className="btn btn--quiet no-drag tiny"
           style={{ justifyContent: "flex-start", gap: 11, padding: "8px 12px" }}
         >
-          <span>◔</span> Diagnostyka
+          <span>◔</span> <span className="nav-label">Diagnostyka</span>
         </button>
 
         <LinkPill link={link} version={engine?.version} onRetry={() => setAttempt((n) => n + 1)} />
       </Glass>
 
       {/* --------------------------------------------------------------- stage */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+      <div className="shell__work">
         <AnimatePresence mode="wait">
           <motion.div
             key={view}

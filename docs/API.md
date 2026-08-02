@@ -81,6 +81,30 @@ podważanej intencji.
 Pole `why` (dlaczego tak zaklasyfikowano) pojawia się wyłącznie przy
 `dev.verbose` — to diagnostyka, nie rozmowa.
 
+### Wygląd
+
+`appearance` w `/api/state` i w `/api/config` to jedyne źródło wyglądu okna:
+
+```json
+{"theme": "system", "accent": "cyan", "glass": 1.0, "density": "comfortable",
+ "text_scale": 1.0, "animation": "system", "orb": "full",
+ "navigation": "labels", "sounds": false, "high_contrast": false}
+```
+
+Jedzie **w pierwszej ramce**, razem z resztą stanu — okno nakłada motyw, zanim
+cokolwiek narysuje, więc nie mruga jasnym przy każdym otwarciu.
+
+Wartości wyliczane (`theme: "system"`, `animation: "system"`) rozstrzyga
+`apps/desktop/src/lib/appearance.ts` i tylko on: pyta system, zapisuje wynik na
+`<html>` jako `data-theme` / `data-motion`, a arkusz stylów czyta stamtąd.
+Dzięki temu jasna paleta jest w kodzie raz, a jawny wybór „jasny" wygrywa
+z ciemnym pulpitem — czego `@media (prefers-color-scheme)` nie potrafi.
+
+`PATCH /api/config` waliduje te pola co do wartości, nie tylko typu: `theme`
+spoza `system|dark|light` to `400`, tak samo `accent` spoza presetów i spoza
+`#rrggbb`, `glass` poza `0..1`, `text_scale` poza `0.9..1.4`. Ustawienie, które
+zapisuje się i nic nie robi, jest gorsze niż odrzucone.
+
 ### Dostawca modeli
 
 Każdy wpis w `/api/providers` i w `models.providers` z `/api/state`:

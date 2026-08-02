@@ -66,6 +66,10 @@ class SettingsService:
         candidate = Config.from_dict(self.config.to_dict())
         for path, value in changes.items():
             candidate.set(str(path), value)
+        # ``set`` only coerces types. A value of the right type and the wrong
+        # meaning ("theme": "purpurowy") would otherwise be saved, reported as
+        # saved, and then ignored by everything that reads it.
+        candidate.validate()
 
         changed = self.config.adopt(candidate)
         if not changed:
@@ -88,6 +92,9 @@ class SettingsService:
             return ()
         try:
             incoming = Config.load(self.paths)
+            # A file edited by hand gets the same scrutiny as the settings
+            # screen; there is no back door for a nonsense value.
+            incoming.validate()
         except ConfigError as exc:
             # A hand-edited file with a stray comma must not take the engine down,
             # and must not be reported once a second either.

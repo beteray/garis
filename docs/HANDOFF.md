@@ -34,7 +34,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (360 testów). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (388 testów backendu + 13 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -68,7 +68,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 360 passed
+.venv/bin/python -m pytest -q                 # 388 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -315,9 +315,16 @@ Zostało:
 7. ⏳ Ikony aplikacji i tray-a.
 8. ⏳ Instalator (MSI/NSIS) + podpis.
 9. ⏳ Test „zamknięcie okna nie zatrzymuje zadania" na realnym Windows.
-10. ⏳ Przeprojektowanie interfejsu (tokeny semantyczne, materiały szkła,
-    responsywność 1024×700 → ultrawide, skalowanie 100–175%, personalizacja).
-    **Nie zaczęte** — opisane w `docs/UI.md`.
+10. 🔶 Przeprojektowanie interfejsu. **Zrobiona warstwa pod spodem**:
+    `appearance` w konfiguracji (motyw, akcent, szkło, gęstość, wielkość
+    tekstu, animacje, wysoki kontrast) z walidacją wartości i migracją
+    z 0.1.1; `lib/appearance.ts` jako jedyny decydent wyglądu; semantyczne
+    materiały i skala w `tokens.css`; responsywna powłoka 1024×700 →
+    ultrawide; jeden pierścień fokusu idący za akcentem. **Zostało**:
+    przeprojektowanie poszczególnych ekranów, tryb `rail` w nawigacji jako
+    wybór użytkownika, jakość kuli, dźwięki, tapeta.
+    Zweryfikowane budową i testami jednostkowymi — **nie oglądane na
+    prawdziwym Windows w żadnej skali**.
 
 Wymagania wizualne są nienegocjowalne i opisane w `docs/UI.md`: Liquid Glass,
 framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
@@ -325,7 +332,8 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 360 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 388 testów, musi być zielone
+cd apps/desktop && npm test              # 13 testów wyglądu
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
 cd apps/desktop && npm run build         # TypeScript strict + Vite

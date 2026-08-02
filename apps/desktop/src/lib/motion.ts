@@ -30,10 +30,15 @@ export const quick: Transition = { duration: 0.18, ease: EASE };
 export const base: Transition = { duration: 0.28, ease: EASE };
 export const slow: Transition = { duration: 0.52, ease: EASE };
 
-/** Does the person want less movement? Checked at render, honoured everywhere. */
+/** Does the person want less movement? Checked at render, honoured everywhere.
+ *
+ * Read from `data-motion`, which `lib/appearance.ts` has already resolved from
+ * the OS preference and the GARIS setting together. Asking `matchMedia` again
+ * here would mean components and stylesheet could disagree — and someone who
+ * turned animation off inside GARIS would still get a spinning orb. */
 export const prefersReducedMotion = () =>
-  typeof window !== "undefined" &&
-  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+  typeof document !== "undefined" &&
+  document.documentElement.dataset.motion === "off";
 
 /**
  * Reduced motion is not "no animation" — it is "no *movement*".

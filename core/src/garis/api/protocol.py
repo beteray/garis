@@ -8,6 +8,7 @@ decides. Anything that looks like a decision here belongs in ``runtime`` or
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -134,6 +135,9 @@ def state_view(garis: Any) -> dict[str, Any]:
             "verbose": config.dev.verbose,
             "developer_mode": config.dev.developer_mode,
         },
+        # In the first frame, not fetched afterwards: the window applies the
+        # theme before it paints, or it flashes the wrong one on every open.
+        "appearance": dataclasses.asdict(config.appearance),
         "counts": {
             "active_tasks": len(tasks),
             "pending_approvals": len(garis.runtime.approvals.pending()),

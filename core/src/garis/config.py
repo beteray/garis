@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import types
 import typing
 from dataclasses import dataclass, field
@@ -156,6 +157,52 @@ class DevConfig:
 
 
 @dataclass
+class AppearanceConfig:
+    """How the window looks. Settings, not preferences buried in a stylesheet.
+
+    Every field here has exactly one reader — ``lib/appearance.ts`` turns it into
+    attributes and custom properties on the document root, and the stylesheet
+    reacts to those. Nothing else is allowed to decide how anything looks, which
+    is what makes "zmień akcent" one change instead of a hunt.
+    """
+
+    theme: str = "system"            # system | dark | light
+    accent: str = "cyan"             # a preset name, or "#rrggbb"
+    glass: float = 1.0               # 0 = plain surfaces, 1 = full Liquid Glass
+    density: str = "comfortable"     # comfortable | compact
+    text_scale: float = 1.0          # 0.9 .. 1.4
+    animation: str = "system"        # system (follow the OS) | full | off
+    orb: str = "full"                # full | simple | off
+    navigation: str = "labels"       # labels | rail
+    sounds: bool = False
+    high_contrast: bool = False
+
+
+#: Accent presets, as HSL triples so they compose with the alpha the glass needs.
+ACCENTS: dict[str, str] = {
+    "cyan": "196 95% 60%",
+    "blue": "212 92% 64%",
+    "violet": "268 85% 68%",
+    "teal": "168 78% 52%",
+    "green": "148 70% 52%",
+    "amber": "38 92% 62%",
+    "rose": "348 88% 66%",
+}
+
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+#: Enumerated appearance fields and what they accept. One table, so the API, the
+#: CLI and the settings screen cannot disagree about what is valid.
+_APPEARANCE_CHOICES: dict[str, tuple[str, ...]] = {
+    "theme": ("system", "dark", "light"),
+    "density": ("comfortable", "compact"),
+    "animation": ("system", "full", "off"),
+    "orb": ("full", "simple", "off"),
+    "navigation": ("labels", "rail"),
+}
+
+
+@dataclass
 class Config:
     identity: Identity = field(default_factory=Identity)
     persona: PersonaConfig = field(default_factory=PersonaConfig)
@@ -166,6 +213,7 @@ class Config:
     tasks: TasksConfig = field(default_factory=TasksConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     dev: DevConfig = field(default_factory=DevConfig)
+    appearance: AppearanceConfig = field(default_factory=AppearanceConfig)
     autostart: bool = True
 
     # --- persistence ---
@@ -179,6 +227,31 @@ class Config:
         except json.JSONDecodeError as exc:
             raise ConfigError(f"Uszkodzony plik konfiguracji: {paths.config_file}") from exc
         return cls.from_dict(raw)
+
+    def validate(self) -> None:
+        """Reject values no screen should be able to produce.
+
+        ``set`` only coerces types, so without this "theme": "purpurowy" would be
+        stored happily and then silently ignored by the stylesheet — a setting
+        that says it was saved and does nothing.
+        """
+        look = self.appearance
+        for field_name, allowed in _APPEARANCE_CHOICES.items():
+            value = getattr(look, field_name)
+            if value not in allowed:
+                raise ConfigError(
+                    f"appearance.{field_name}: \u201e{value}\u201d nie jest jedn\u0105 z "
+                    f"{', '.join(allowed)}"
+                )
+        if look.accent not in ACCENTS and not _HEX.match(look.accent):
+            raise ConfigError(
+                f"appearance.accent: \u201e{look.accent}\u201d to ani jeden z "
+                f"{', '.join(ACCENTS)}, ani kolor #rrggbb"
+            )
+        if not 0.0 <= look.glass <= 1.0:
+            raise ConfigError("appearance.glass mieści się w 0..1")
+        if not 0.9 <= look.text_scale <= 1.4:
+            raise ConfigError("appearance.text_scale mieści się w 0.9..1.4")
 
     def save(self, paths: Paths) -> None:
         paths.ensure()
