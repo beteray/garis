@@ -4,8 +4,8 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { SCENARIOS, enabled } from "./scenarios";
-import { active, mounted } from "./fixture";
+import { SCENARIOS } from "./scenarios";
+import { enabled, mount, mounted } from "./fixture";
 
 const url = (search: string) => {
   window.history.replaceState({}, "", `/${search}`);
@@ -20,9 +20,9 @@ describe("a fixture cannot reach a real build", () => {
     expect(enabled()).toBe(false);
   });
 
-  it("ignores the query parameter when it is off", () => {
+  it("ignores the query parameter when it is off", async () => {
     url("?fixture=idle");
-    expect(active()).toBeNull();
+    await mount();
     expect(mounted()).toBe(false);
   });
 

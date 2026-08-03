@@ -10,9 +10,7 @@ import "./styles/global.css";
 // looks broken no matter how good the theme it settles on is.
 applyAppearance(DEFAULT_APPEARANCE);
 
-// Development-only visual states for screenshots. A production build compiles
-// this to nothing, because the gate inside it is a build-time literal.
-mountFixture();
+
 
 // Native window vibrancy (Mica/Acrylic) is set by the Tauri shell; when it is
 // present the CSS gradient fallback stays out of the way so the blur has real
@@ -22,8 +20,15 @@ if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
   root.dataset.vibrancy = "true";
 }
 
-ReactDOM.createRoot(root).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+const render = () =>
+  ReactDOM.createRoot(root).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+
+// Development-only visual states for screenshots, and a no-op everywhere else:
+// the gate inside is a build-time literal, so a production build resolves this
+// immediately and never loads the scenario chunk. Awaited, because the shell
+// must know on its first render whether there is an engine to look for.
+void mountFixture().finally(render);

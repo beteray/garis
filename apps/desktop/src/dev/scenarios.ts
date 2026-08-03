@@ -8,7 +8,7 @@
  * captured from these is a picture of the frontend, and must be described that
  * way.
  *
- * Four hard constraints, enforced by `enabled()` below and by a test:
+ * Four hard constraints, enforced by the gate in `fixture.ts` and by a test:
  *
  *   - never reachable in a production build;
  *   - never calls a provider or any network;
@@ -25,15 +25,6 @@ import type { EngineState, Link } from "../lib/api";
 import { DEFAULT_APPEARANCE } from "../lib/appearance";
 import type { ChatEntry } from "../lib/store";
 import type { Approval, Memory, Provider, Secret, Task, Tool } from "../lib/api";
-
-/**
- * The gate. Fixtures exist only when the bundle was built with the flag, and
- * `import.meta.env.PROD` can never satisfy it — Vite substitutes the literal at
- * build time, so a production bundle drops this whole module as dead code.
- */
-export function enabled(): boolean {
-  return import.meta.env.VITE_GARIS_FIXTURES === "1" && !import.meta.env.PROD;
-}
 
 const now = () => Date.UTC(2026, 7, 3, 12, 0, 0) / 1000;
 
