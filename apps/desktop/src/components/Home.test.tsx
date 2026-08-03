@@ -85,6 +85,51 @@ describe("home", () => {
     expect(screen.getByRole("button", { name: "Zgoda" })).toBeInTheDocument();
   });
 
+  it("says which provider failed, and where to go about it", () => {
+    given({
+      engine: engine({
+        models: {
+          ...engine().models,
+          providers: [
+            {
+              ...engine().models.providers[0],
+              name: "gemini",
+              available: false,
+              status: "invalid_key",
+              reason: "Klucz odrzucony przez dostawcę.",
+            },
+          ],
+        },
+      }),
+    });
+    render(<Home state="warning" />);
+
+    // "Coś wymaga uwagi" with nothing else on screen is a dead end.
+    expect(screen.getByText(/Klucz odrzucony przez dostawcę/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Napraw" })).toBeInTheDocument();
+  });
+
+  it("stays quiet about a provider it has not checked", () => {
+    // Not having looked is not the same as having found a problem.
+    given({
+      engine: engine({
+        models: {
+          ...engine().models,
+          providers: [
+            {
+              ...engine().models.providers[0],
+              available: false,
+              status: "unknown",
+              reason: "Nie sprawdzałem.",
+            },
+          ],
+        },
+      }),
+    });
+    render(<Home state="idle" />);
+    expect(screen.queryByRole("button", { name: "Napraw" })).toBeNull();
+  });
+
   it("offers exactly one place to answer a request", () => {
     // Three sets of buttons for one decision — in the thread, on the pinned
     // card, and in the floating layer — is three chances to wonder which one

@@ -38,6 +38,7 @@ export function Home({ state }: { state: RuntimeState }) {
   const tasks = useStore((s) => s.tasks);
   const approvals = useStore((s) => s.approvals);
   const engine = useStore((s) => s.engine);
+  const setView = useStore((s) => s.setView);
   const [shown, setShown] = useState(PAGE);
   const endRef = useRef<HTMLDivElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
@@ -61,16 +62,38 @@ export function Home({ state }: { state: RuntimeState }) {
   const running = tasks.filter(
     (task) => task.state === "running" || task.state === "pending",
   );
+  // A provider the engine measured as unusable. `unknown` is not one of these:
+  // not having checked yet is not the same as having found a problem.
+  const broken = (engine?.models.providers ?? []).find(
+    (provider) => !provider.available && provider.status !== "unknown",
+  );
+
   const detail =
     running.length > 0
       ? `${running.length} ${running.length === 1 ? "zadanie" : "zadania"} w toku`
-      : engine
-        ? undefined
-        : "Czekam na silnik.";
+      : !engine
+        ? "Czekam na silnik."
+        : broken
+          ? // The engine's own words for what it found, so the banner cannot
+            // drift from what the Connections screen says.
+            `${broken.name}: ${broken.reason}`
+          : undefined;
 
   return (
     <div className="home">
-      <PresenceBanner state={state} detail={detail} />
+      <PresenceBanner
+        state={state}
+        detail={detail}
+        action={
+          // "Something needs attention" with nowhere to go is a dead end. This
+          // appears only when the engine actually measured a failure.
+          broken && running.length === 0 ? (
+            <button className="btn btn--quiet tiny" onClick={() => setView("settings")}>
+              Napraw
+            </button>
+          ) : undefined
+        }
+      />
 
       {/* Pinned, not in the thread: an approval that scrolls out of sight is an
           approval that never gets answered. */}
