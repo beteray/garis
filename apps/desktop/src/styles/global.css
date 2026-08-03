@@ -874,11 +874,12 @@ p { margin: 0; }
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .message__tools {
-    transition: opacity var(--dur-fast) linear;
-    transform: none;
-  }
+/* Calm is resolved once, in lib/appearance.ts, from the OS preference and the
+ * GARIS setting together — never from the media query directly, or the two can
+ * disagree and someone who turned animation off inside GARIS still gets a
+ * moving interface. */
+:root[data-motion="off"] .message__tools {
+  transform: none;
 }
 
 .message__effects {

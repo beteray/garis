@@ -28,7 +28,7 @@
 
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { readFile, mkdir, rm } from "node:fs/promises";
+import { readFile, readdir, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -115,8 +115,14 @@ async function main() {
   const scenarios = only.length ? names.filter((name) => only.includes(name)) : names;
   if (!scenarios.length) throw new Error(`brak scenariuszy: ${only.join(", ")}`);
 
-  await rm(out, { recursive: true, force: true });
+  // Only what is about to be retaken. A run for one scenario used to empty the
+  // folder, so checking one screen threw away every other picture.
   await mkdir(out, { recursive: true });
+  for (const name of scenarios) {
+    for (const file of await readdir(out)) {
+      if (file.startsWith(`${name}--`)) await rm(join(out, file));
+    }
+  }
 
   const port = await freePort();
   const ORIGIN = `http://127.0.0.1:${port}`;
