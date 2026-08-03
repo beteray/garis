@@ -8,7 +8,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
-import { EASE, base, spring } from "../lib/motion";
+import { SPRING, TWEEN, EASE } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Presence } from "./Presence";
 import { Glass, Pill } from "./ui";
@@ -128,7 +128,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
         <motion.div
           initial={{ scale: 0.7, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ ...spring, delay: 0.1 }}
+          transition={{ ...SPRING.panel, delay: 0.1 }}
         >
           <Presence state={index === STEPS.length - 1 ? "completed" : "idle"} size={16} />
         </motion.div>
@@ -150,7 +150,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
               initial={{ opacity: 0, y: 14, filter: "blur(6px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               exit={{ opacity: 0, y: -14, filter: "blur(6px)" }}
-              transition={base}
+              transition={TWEEN.content}
               style={{ display: "grid", gap: 14 }}
             >
               <div style={{ display: "grid", gap: 6 }}>
@@ -204,7 +204,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
                     width: position === index ? 22 : 6,
                     opacity: position <= index ? 1 : 0.32,
                   }}
-                  transition={spring}
+                  transition={SPRING.control}
                   style={{
                     height: 6,
                     borderRadius: "var(--radius-pill)",

@@ -17,7 +17,7 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import type { Provider, ProviderStatus } from "../lib/api";
-import { quick } from "../lib/motion";
+import { TWEEN } from "../lib/motion";
 import { useStore } from "../lib/store";
 
 /** Colour and shape per state. Never colour alone: a dot that differs only in
@@ -115,7 +115,7 @@ export function RecheckButton() {
     >
       <motion.span
         animate={{ opacity: busy ? 0.6 : 1 }}
-        transition={quick}
+        transition={TWEEN.control}
       >
         {busy ? "Sprawdzam…" : "Sprawdź ponownie"}
       </motion.span>

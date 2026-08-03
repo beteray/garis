@@ -14,7 +14,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import type { Destination, NavShape, Route } from "../lib/nav";
-import { quick, spring } from "../lib/motion";
+import { SPRING, tactile, variants } from "../lib/motion";
 
 interface NavProps {
   shape: NavShape;
@@ -44,8 +44,9 @@ function NavItem({
   onSelect: () => void;
 }) {
   return (
-    <button
+    <motion.button
       onClick={onSelect}
+      {...tactile({ lift: false })}
       className="btn btn--quiet no-drag nav-item"
       // The accessible name survives the label being hidden. `title` gives the
       // sighted keyboard user the same thing as a tooltip.
@@ -57,7 +58,7 @@ function NavItem({
       {active && (
         <motion.span
           layoutId="nav-active"
-          transition={spring}
+          transition={SPRING.spatial}
           aria-hidden
           className="nav-item__pill"
         />
@@ -75,7 +76,7 @@ function NavItem({
           {badge}
         </span>
       )}
-    </button>
+    </motion.button>
   );
 }
 
@@ -153,10 +154,10 @@ export function Nav({
           <>
             <motion.div
               className="nav-scrim"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={quick}
+              variants={variants("scrim")}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
               onClick={onClose}
               aria-hidden
             />
@@ -166,10 +167,10 @@ export function Nav({
               aria-modal="true"
               aria-label="Nawigacja"
               className="glass glass--raised nav nav--overlay"
-              initial={{ x: -24, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -24, opacity: 0 }}
-              transition={spring}
+              variants={variants("sheet")}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
             >
               {header}
               <nav aria-label="Główna nawigacja" className="nav__list">

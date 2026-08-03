@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Link } from "./lib/api";
 import { GarisApi, classify, discover } from "./lib/api";
 import { applyAppearance, watchSystemAppearance } from "./lib/appearance";
-import { panelVariants, prefersReducedMotion, reducedPanelVariants } from "./lib/motion";
+import { variants } from "./lib/motion";
 import { navShape, routesFor } from "./lib/nav";
 import type { Route } from "./lib/nav";
 import { runtimeState } from "./lib/runtimeState";
@@ -55,7 +55,6 @@ export default function App() {
   const [attempt, setAttempt] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const { width } = useWindowSize();
-  const reduced = prefersReducedMotion();
 
   useEffect(() => {
     let disconnect: (() => void) | undefined;
@@ -206,7 +205,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.main
             key={view}
-            variants={reduced ? reducedPanelVariants : panelVariants}
+            variants={variants("panel")}
             initial="hidden"
             animate="visible"
             exit="exit"

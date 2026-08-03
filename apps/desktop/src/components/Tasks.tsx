@@ -13,7 +13,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { Task, TaskState } from "../lib/api";
-import { staggerContainer } from "../lib/motion";
+import { stagger } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { TaskCard } from "./TaskCard";
 import { Empty, Section } from "./ui";
@@ -55,7 +55,7 @@ export function TasksView() {
   ) as Record<string, number>;
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="screen">
+    <motion.div variants={stagger()} initial="hidden" animate="visible" className="screen">
       <Section title="Zadania">
         <div className="filters" role="tablist" aria-label="Filtr zadań">
           {FILTERS.map(([id, label]) => (

@@ -3,7 +3,7 @@
 import { AnimatePresence, motion, useMotionValue, useSpring } from "framer-motion";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { EASE, base, cardVariants, quick } from "../lib/motion";
+import { EASE, TWEEN, variants } from "../lib/motion";
 
 /**
  * A glass surface that reacts to the pointer.
@@ -95,7 +95,7 @@ export function Empty({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={base}
+      transition={TWEEN.content}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -165,7 +165,7 @@ export function Pill({
       className="btn tiny"
       onClick={onClick}
       whileTap={{ scale: 0.96 }}
-      transition={quick}
+      transition={TWEEN.control}
       style={{
         padding: "5px 12px",
         borderRadius: "var(--radius-pill)",
@@ -199,7 +199,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <motion.section variants={cardVariants} style={{ display: "grid", gap: 12 }}>
+    <motion.section variants={variants("card")} style={{ display: "grid", gap: 12 }}>
       <header
         style={{
           display: "flex",

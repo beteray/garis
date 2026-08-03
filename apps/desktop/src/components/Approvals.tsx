@@ -10,7 +10,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import type { Approval } from "../lib/api";
-import { base, cardVariants, quick, spring } from "../lib/motion";
+import { SPRING, TWEEN, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { EffectBadge, Glass } from "./ui";
 
@@ -43,7 +43,7 @@ function Card({ approval }: { approval: Approval }) {
   return (
     <motion.div
       layout
-      variants={cardVariants}
+      variants={variants("attention")}
       initial="hidden"
       animate="visible"
       exit="exit"
@@ -89,7 +89,7 @@ function Card({ approval }: { approval: Approval }) {
             <motion.div
               key="buttons"
               exit={{ opacity: 0, y: -6 }}
-              transition={quick}
+              transition={TWEEN.control}
               style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}
             >
               <motion.button
@@ -97,7 +97,7 @@ function Card({ approval }: { approval: Approval }) {
                 onClick={() => void answer(false)}
                 whileHover={{ y: -1 }}
                 whileTap={{ scale: 0.97 }}
-                transition={quick}
+                transition={TWEEN.control}
               >
                 Nie
               </motion.button>
@@ -106,7 +106,7 @@ function Card({ approval }: { approval: Approval }) {
                 onClick={() => void answer(true)}
                 whileHover={{ y: -1 }}
                 whileTap={{ scale: 0.97 }}
-                transition={quick}
+                transition={TWEEN.control}
                 autoFocus
               >
                 Tak, zrób to
@@ -117,7 +117,7 @@ function Card({ approval }: { approval: Approval }) {
               key="answered"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={spring}
+              transition={SPRING.panel}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -129,7 +129,7 @@ function Card({ approval }: { approval: Approval }) {
               <motion.span
                 initial={{ pathLength: 0, scale: 0.6 }}
                 animate={{ scale: 1 }}
-                transition={spring}
+                transition={SPRING.panel}
                 style={{ fontSize: 18 }}
               >
                 {answered ? "✓" : "✕"}
@@ -180,7 +180,7 @@ export function ApprovalBadge({ count }: { count: number }) {
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0, opacity: 0 }}
-          transition={spring}
+          transition={SPRING.panel}
           className="tiny"
           style={{
             minWidth: 20,
@@ -206,4 +206,4 @@ export function ApprovalBadge({ count }: { count: number }) {
   );
 }
 
-export const approvalTransition = base;
+export const approvalTransition = TWEEN.content;

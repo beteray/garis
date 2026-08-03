@@ -9,7 +9,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { base, staggerContainer, staggerItem } from "../lib/motion";
+import { TWEEN, stagger, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Glass, Section } from "./ui";
 import { ProviderRow, RecheckButton } from "./Providers";
@@ -27,7 +27,7 @@ export function DeveloperView() {
   }, [refreshTools, api]);
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="screen">
+    <motion.div variants={stagger()} initial="hidden" animate="visible" className="screen">
       <Section title="Silnik">
         <Glass className="glass--card diagnostic">
           <dl className="kv">
@@ -92,7 +92,7 @@ export function DeveloperView() {
           {tools.map((tool) => (
             <motion.div
               key={tool.name}
-              variants={staggerItem}
+              variants={variants("card")}
               className="tool-row"
               style={{ opacity: tool.available ? 1 : 0.45 }}
             >
@@ -111,7 +111,7 @@ export function DeveloperView() {
               key={index}
               initial={{ opacity: 0, x: -6 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ ...base, delay: Math.min(index * 0.012, 0.3) }}
+              transition={{ ...TWEEN.content, delay: Math.min(index * 0.012, 0.3) }}
               className="mono tiny faint"
             >
               {String(entry.tool)} → {String(entry.outcome)}{" "}

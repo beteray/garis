@@ -15,7 +15,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { Memory } from "../lib/api";
-import { listItemVariants, staggerContainer, staggerItem } from "../lib/motion";
+import { stagger, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { AnimatedNumber, Empty, Glass, Pill, Section, relativeTime } from "./ui";
 
@@ -65,7 +65,7 @@ function MemoryCard({ memory }: { memory: Memory }) {
   };
 
   return (
-    <motion.div layout variants={listItemVariants} initial="hidden" animate="visible" exit="exit">
+    <motion.div layout variants={variants("row")} initial="hidden" animate="visible" exit="exit">
       <Glass className="glass--card memory">
         <div className="memory__meta tiny faint">
           <span>{KIND_LABEL[memory.kind] ?? memory.kind}</span>
@@ -162,7 +162,7 @@ export function MemoryView() {
   const present = new Set(memories.map((memory) => memory.kind));
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="screen">
+    <motion.div variants={stagger()} initial="hidden" animate="visible" className="screen">
       <Section
         title="Pamięć"
         action={
@@ -216,9 +216,9 @@ export function MemoryView() {
         {secrets.length === 0 ? (
           <Empty icon="🔒" title="Sejf jest pusty." hint="Klucze modeli dodasz w Ustawieniach." />
         ) : (
-          <motion.div variants={staggerContainer} className="memory-list">
+          <motion.div variants={stagger()} className="memory-list">
             {secrets.map((secret) => (
-              <motion.div key={secret.name} variants={staggerItem}>
+              <motion.div key={secret.name} variants={variants("card")}>
                 <Glass className="glass--card secret">
                   <span aria-hidden className="secret__icon">
                     🔑

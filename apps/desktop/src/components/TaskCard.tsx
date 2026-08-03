@@ -20,7 +20,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { Task, TaskState } from "../lib/api";
 import { outcomeOf } from "../lib/chat";
-import { spring } from "../lib/motion";
+import { SPRING } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { relativeTime } from "./ui";
 
@@ -192,7 +192,7 @@ export function TaskCard({
       className="task glass glass--card"
       data-state={task.state}
       data-embedded={embedded || undefined}
-      transition={spring}
+      transition={SPRING.panel}
     >
       <header className="task__head">
         <span aria-hidden className="task__mark" style={{ color: state.tone }}>
@@ -258,7 +258,7 @@ export function TaskCard({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={spring}
+            transition={SPRING.panel}
           >
             <Row label="Cel">{task.goal}</Row>
             {task.criteria.length > 0 && (

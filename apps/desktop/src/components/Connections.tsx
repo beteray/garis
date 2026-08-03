@@ -24,7 +24,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import type { Tool } from "../lib/api";
-import { staggerContainer, staggerItem } from "../lib/motion";
+import { stagger, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Empty, Glass, Section, relativeTime } from "./ui";
 
@@ -98,7 +98,7 @@ export function ConnectionsView() {
   );
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="screen">
+    <motion.div variants={stagger()} initial="hidden" animate="visible" className="screen">
       <Section title="Ten komputer">
         <Glass className="glass--card device">
           <span aria-hidden className="device__icon">
@@ -181,7 +181,7 @@ export function ConnectionsView() {
             hint="Powiedz: „dodaj serwer 10.0.0.5 i nazwij go produkcja”."
           />
         ) : (
-          <motion.div variants={staggerContainer} className="memory-list">
+          <motion.div variants={stagger()} className="memory-list">
             {devices.map((device) => {
               const state = DEVICE_STATE[device.state] ?? DEVICE_STATE.unknown;
               const busy = tasks.filter(
@@ -190,7 +190,7 @@ export function ConnectionsView() {
                   (task.state === "running" || task.state === "pending"),
               ).length;
               return (
-                <motion.div key={device.id} variants={staggerItem}>
+                <motion.div key={device.id} variants={variants("card")}>
                   <Glass className="glass--card device">
                     <span aria-hidden className="device__icon">
                       🖥

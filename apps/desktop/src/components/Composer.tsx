@@ -19,7 +19,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { base, quick, spring } from "../lib/motion";
+import { SPRING, TWEEN, tactile } from "../lib/motion";
 import { useStore } from "../lib/store";
 
 const SUGGESTIONS = [
@@ -74,14 +74,14 @@ export function Composer({ showSuggestions = true }: { showSuggestions?: boolean
   };
 
   return (
-    <motion.div layout transition={spring} className="composer">
+    <motion.div layout transition={SPRING.panel} className="composer">
       <AnimatePresence>
         {showSuggestions && !text && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6, height: 0 }}
-            transition={base}
+            transition={TWEEN.content}
             className="composer__suggestions"
           >
             {SUGGESTIONS.map((suggestion, index) => (
@@ -94,9 +94,8 @@ export function Composer({ showSuggestions = true }: { showSuggestions?: boolean
                 }}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ ...base, delay: 0.04 * index }}
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.97 }}
+                transition={{ ...TWEEN.content, delay: 0.04 * index }}
+                {...tactile()}
                 style={{ borderRadius: "var(--radius-pill)" }}
               >
                 {suggestion}
@@ -143,9 +142,7 @@ export function Composer({ showSuggestions = true }: { showSuggestions?: boolean
           className="btn btn--primary no-drag"
           onClick={() => void submit(false)}
           disabled={!text.trim() || sending}
-          whileHover={text.trim() ? { y: -1 } : undefined}
-          whileTap={text.trim() ? { scale: 0.97 } : undefined}
-          transition={quick}
+          {...tactile({ disabled: !text.trim() || sending })}
         >
           {sending ? "Wysyłam…" : "Wyślij"}
         </motion.button>

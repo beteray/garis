@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { ACCENTS, DEFAULT_APPEARANCE } from "../lib/appearance";
 import { ModelsSettings } from "./Models";
-import { base, quick, staggerContainer } from "../lib/motion";
+import { SPRING, TWEEN, stagger, tactile } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Glass, Pill, Section } from "./ui";
 
@@ -78,7 +78,7 @@ function Toggle({
       {/* layout animation does the sliding: the knob travels, never teleports */}
       <motion.span
         layout
-        transition={{ type: "spring", stiffness: 480, damping: 32 }}
+        transition={SPRING.control}
         style={{
           width: 20,
           height: 20,
@@ -105,11 +105,12 @@ function Choice({
   return (
     <div role="radiogroup" style={{ display: "flex", gap: 4 }}>
       {options.map(([id, label]) => (
-        <button
+        <motion.button
           key={id}
           role="radio"
           aria-checked={value === id}
           onClick={() => onChange(id)}
+          {...tactile({ lift: false })}
           className="btn btn--quiet no-drag"
           style={{
             padding: "5px 11px",
@@ -120,7 +121,7 @@ function Choice({
           }}
         >
           {label}
-        </button>
+        </motion.button>
       ))}
     </div>
   );
@@ -236,7 +237,7 @@ export function SettingsView() {
 
       <motion.div
         key={category}
-        variants={staggerContainer}
+        variants={stagger()}
         initial="hidden"
         animate="visible"
         className="settings__body scroll"
@@ -552,7 +553,7 @@ export function SettingsView() {
             <motion.span
               initial={false}
               animate={{ opacity: saved ? 1 : 0 }}
-              transition={base}
+              transition={TWEEN.content}
               className="tiny"
               style={{ color: "hsl(var(--state-ok))" }}
             >
@@ -565,4 +566,4 @@ export function SettingsView() {
   );
 }
 
-export const settingsTransition = quick;
+export const settingsTransition = TWEEN.control;

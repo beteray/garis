@@ -17,7 +17,7 @@ import { useState } from "react";
 import type { ChatEntry } from "../lib/store";
 import { ENTRY } from "../lib/chat";
 import { useStore } from "../lib/store";
-import { messageVariants } from "../lib/motion";
+import { variants } from "../lib/motion";
 import { relativeTime } from "./ui";
 import { TaskCard } from "./TaskCard";
 
@@ -126,7 +126,7 @@ export function Message({ entry }: { entry: ChatEntry }) {
   // starts, and the work needs to stay visible without leaving the thread.
   if (entry.kind === "task" && entry.taskId) {
     return (
-      <motion.div variants={messageVariants} initial="hidden" animate="visible" exit="exit">
+      <motion.div variants={variants("message")} initial="hidden" animate="visible" exit="exit">
         <TaskCard taskId={entry.taskId} embedded />
       </motion.div>
     );
@@ -136,7 +136,7 @@ export function Message({ entry }: { entry: ChatEntry }) {
     return (
       <motion.div
         className="message message--progress"
-        variants={messageVariants}
+        variants={variants("message")}
         initial="hidden"
         animate="visible"
         exit="exit"
@@ -155,7 +155,7 @@ export function Message({ entry }: { entry: ChatEntry }) {
       data-kind={entry.kind}
       data-emphasis={look.emphasis}
       data-mine={mine || undefined}
-      variants={messageVariants}
+      variants={variants("message")}
       initial="hidden"
       animate="visible"
       exit="exit"

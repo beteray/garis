@@ -13,7 +13,7 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import type { Provider } from "../lib/api";
-import { quick } from "../lib/motion";
+import { TWEEN } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { humanSecretName } from "./Memory";
 import { ProviderRow, RecheckButton } from "./Providers";
@@ -153,7 +153,7 @@ function ProviderPanel({
           className="tiny"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={quick}
+          transition={TWEEN.control}
           style={{ color: "var(--accent)" }}
           role="status"
         >
