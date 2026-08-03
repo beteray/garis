@@ -37,7 +37,10 @@ function Actions({ entry }: { entry: ChatEntry }) {
   };
 
   return (
-    <div className="message__actions">
+    // Out of the layout flow, not merely transparent: a hidden row that still
+    // occupies height put roughly forty dead pixels under every message, which
+    // is what made a short conversation look like a list of unrelated cards.
+    <div className="message__tools">
       {entry.text && (
         <button className="btn btn--quiet tiny" onClick={() => void copy()}>
           {copied ? "Skopiowane" : "Kopiuj"}
@@ -75,7 +78,6 @@ function RetryTask({ taskId }: { taskId: string }) {
 
 function ApprovalCard({ entry }: { entry: ChatEntry }) {
   const approvals = useStore((s) => s.approvals);
-  const resolve = useStore((s) => s.resolveApproval);
   const developer = useStore((s) => s.engine?.dev.developer_mode ?? false);
   const approval = approvals.find((candidate) => candidate.id === entry.approvalId);
 
@@ -92,17 +94,11 @@ function ApprovalCard({ entry }: { entry: ChatEntry }) {
               </span>
             ))}
           </div>
-          <div className="message__actions">
-            <button className="btn tiny" onClick={() => void resolve(approval.id, true)}>
-              Zgoda
-            </button>
-            <button
-              className="btn btn--quiet tiny"
-              onClick={() => void resolve(approval.id, false)}
-            >
-              Nie
-            </button>
-          </div>
+          {/* No buttons here. One decision is answered in one place — the
+              approval card that is already on screen — because three sets of
+              "Zgoda / Nie" for one request is three chances to wonder which one
+              counted. */}
+          <p className="tiny faint">Odpowiedz w oknie zgody.</p>
           {developer && (
             <code className="mono tiny faint selectable">{approval.tool}</code>
           )}

@@ -143,9 +143,39 @@ function Card({ approval }: { approval: Approval }) {
   );
 }
 
-/** Floating layer: approvals sit above whatever panel is open. */
+/**
+ * How many blocked tasks Home pins above the thread. Kept in step with
+ * `Home.tsx`; if the two disagree, the worst case is an approval offered twice
+ * rather than one offered nowhere.
+ */
+const PINNED_ON_HOME = 3;
+
+/**
+ * Floating layer: approvals sit above whatever panel is open.
+ *
+ * It deliberately says nothing about an approval the current screen is already
+ * asking about. One request used to produce three sets of "Zgoda / Nie" — in
+ * the conversation, on the pinned task card, and here — which is three chances
+ * to wonder which button counted. The rule now: the screen answers if it can,
+ * and this layer covers everywhere else.
+ */
 export function ApprovalLayer() {
   const approvals = useStore((s) => s.approvals);
+  const view = useStore((s) => s.view);
+  const tasks = useStore((s) => s.tasks);
+
+  const blocked = tasks.filter((task) => task.state === "blocked");
+  const onScreen = new Set(
+    view === "tasks"
+      ? blocked.map((task) => task.id)
+      : view === "home"
+        ? blocked.slice(0, PINNED_ON_HOME).map((task) => task.id)
+        : [],
+  );
+  // An approval with no task cannot be shown anywhere else, so it always floats.
+  const floating = approvals.filter(
+    (approval) => !approval.task_id || !onScreen.has(approval.task_id),
+  );
 
   return (
     <div
@@ -161,7 +191,7 @@ export function ApprovalLayer() {
       }}
     >
       <AnimatePresence>
-        {approvals.map((approval) => (
+        {floating.map((approval) => (
           <div key={approval.id} style={{ pointerEvents: "auto" }}>
             <Card approval={approval} />
           </div>

@@ -818,16 +818,67 @@ p { margin: 0; }
   flex-wrap: wrap;
 }
 
-/* Actions stay out of the way until the entry is touched, but never disappear
- * for keyboard users — focus-within brings them back. */
-.message:not([data-emphasis="loud"]) .message__actions {
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-glass);
+/* Per-entry tools — copy, resend, correct.
+ *
+ * Absolutely positioned, so an invisible row cannot reserve height: the earlier
+ * version faded them out but kept them in the flow, and a two-line answer sat in
+ * a box half again as tall as its text. Out of the flow they also cost no
+ * layout when they appear, which is what lets them move.
+ *
+ * They stay out of the way until the entry is touched, and never disappear for
+ * keyboard users — focus-within brings them back. */
+.message {
+  position: relative;
 }
 
-.message:hover .message__actions,
-.message:focus-within .message__actions {
+.message__tools {
+  position: absolute;
+  right: 6px;
+  bottom: -6px;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--material-card);
+  border: 1px solid var(--glass-stroke);
+  box-shadow: var(--shadow-card);
+  opacity: 0;
+  transform: translateY(3px);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-glass),
+    transform var(--dur-fast) var(--ease-glass);
+}
+
+.message:hover .message__tools,
+.message:focus-within .message__tools {
   opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* A mouse is not the only pointer, and a tablet has no hover: where hovering is
+ * impossible the tools are simply always there. */
+@media (hover: none) {
+  .message__tools {
+    position: static;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    background: none;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message__tools {
+    transition: opacity var(--dur-fast) linear;
+    transform: none;
+  }
 }
 
 .message__effects {

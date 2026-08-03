@@ -85,6 +85,23 @@ describe("home", () => {
     expect(screen.getByRole("button", { name: "Zgoda" })).toBeInTheDocument();
   });
 
+  it("offers exactly one place to answer a request", () => {
+    // Three sets of buttons for one decision — in the thread, on the pinned
+    // card, and in the floating layer — is three chances to wonder which one
+    // counted, and it is what this screen used to do.
+    given({
+      tasks: [task({ state: "blocked" })],
+      approvals: [approval()],
+      chat: [entry({ kind: "approval", taskId: "t1", approvalId: "a1" })],
+    });
+    render(<Home state="waiting_approval" />);
+
+    expect(screen.getAllByRole("button", { name: "Zgoda" })).toHaveLength(1);
+    // And the entry in the thread still says what was asked, so scrolling back
+    // through the conversation is not a blank.
+    expect(screen.getAllByText(/Zainstalować 7-Zip/).length).toBeGreaterThan(0);
+  });
+
   it("resolves an approval through the engine, not locally", async () => {
     const resolveApproval = vi.fn(async () => approval({ state: "approved" }));
     given({
