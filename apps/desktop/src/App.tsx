@@ -34,6 +34,7 @@ import { Presence } from "./components/Presence";
 import { SettingsView } from "./components/Settings";
 import { TasksView } from "./components/Tasks";
 import { Glass } from "./components/ui";
+import * as fixture from "./dev/fixture";
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -59,6 +60,15 @@ export default function App() {
   useEffect(() => {
     let disconnect: (() => void) | undefined;
     let cancelled = false;
+
+    // A visual fixture is already in the store, and there is nothing to
+    // discover: reaching for an engine here would either hang or, worse,
+    // overwrite the snapshot with real data half-way through a screenshot.
+    if (fixture.mounted()) {
+      setLink(fixture.link());
+      setReady(true);
+      return;
+    }
 
     void (async () => {
       setLink({ state: "starting" });
@@ -102,6 +112,9 @@ export default function App() {
   // The socket is the live truth once we are up: losing it is "retrying", not
   // "connected", and getting it back clears whatever error came before.
   useEffect(() => {
+    // Under a fixture there is no socket, and "no socket" must not be reported
+    // as a lost connection — the scenario already said what the pill shows.
+    if (fixture.mounted()) return;
     setLink((current) => {
       if (connection === "open") return { state: "connected" };
       if (current.state === "connected") return { state: "retrying", attempt: 1 };
