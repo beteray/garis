@@ -14,12 +14,23 @@ use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
+
+/// How far the engine has got. The window needs this to tell "still coming up"
+/// apart from "did not come up", which are the same picture without it.
+#[derive(Default, Serialize, Clone, PartialEq, Debug)]
+enum Phase {
+    #[default]
+    Starting,
+    Ready,
+    Failed,
+}
 
 #[derive(Default, Serialize, Clone)]
 struct EngineInfo {
@@ -31,21 +42,59 @@ struct EngineInfo {
     /// to print to: without this the user gets a window that never connects and
     /// no way to find out why.
     error: String,
+    phase: Phase,
+    /// The sidecar's exit code, when it exited. `None` while it is running.
+    exit_code: Option<i32>,
+    /// Where the log is, so the window can offer to open it. Never a secret.
+    log: String,
 }
 
 #[derive(Default)]
 struct Engine {
     info: Mutex<EngineInfo>,
     child: Mutex<Option<Child>>,
+    /// Signalled when the engine reaches a settled phase, so `engine_info` can
+    /// wait for an answer instead of returning an empty one.
+    settled: Condvar,
 }
+
+/// How long the window waits for the engine before giving up on it.
+///
+/// A Python sidecar unpacked by PyInstaller on a cold disk, opening a SQLite
+/// database and checking providers, is not instant. Twenty seconds is generous
+/// enough to cover a slow first run and short enough that a genuinely dead
+/// engine is reported rather than waited on forever.
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Where the engine is and how to authenticate to it.
 ///
 /// The UI asks for this instead of storing a token: the shell started the engine,
 /// so the shell is the only thing that legitimately knows the secret.
+///
+/// **This waits.** `start_engine` returns as soon as the process is spawned,
+/// but the address and token only arrive a second or two later, on the pipe.
+/// Returning the empty info in the meantime is what made every launch look like
+/// a failed one: the window asked once, at mount, got no token, and concluded
+/// the engine was dead while it was still starting.
 #[tauri::command]
 fn engine_info(engine: State<'_, Engine>) -> EngineInfo {
-    engine.info.lock().expect("engine info poisoned").clone()
+    let info = engine.info.lock().expect("engine info poisoned");
+    let (info, _timeout) = engine
+        .settled
+        .wait_timeout_while(info, READY_TIMEOUT, |info| info.phase == Phase::Starting)
+        .expect("engine info poisoned");
+
+    // A timeout is itself an answer, and a different one from "it crashed".
+    if info.phase == Phase::Starting {
+        let mut timed_out = info.clone();
+        timed_out.phase = Phase::Failed;
+        timed_out.error = format!(
+            "Silnik nie zgłosił gotowości w {} s. Zobacz log.",
+            READY_TIMEOUT.as_secs()
+        );
+        return timed_out;
+    }
+    info.clone()
 }
 
 #[tauri::command]
@@ -66,11 +115,10 @@ fn restart_engine(app: AppHandle) -> EngineInfo {
         .lock()
         .expect("engine info poisoned") = EngineInfo::default();
     start_engine(&app);
-    app.state::<Engine>()
-        .info
-        .lock()
-        .expect("engine info poisoned")
-        .clone()
+    // Through `engine_info`, so the retry waits for readiness exactly like the
+    // first attempt does. Reading the info straight back was the same bug in a
+    // second place: the button reported failure before the engine had a chance.
+    engine_info(app.state::<Engine>())
 }
 
 /// Where the engine's own output goes.
@@ -82,6 +130,15 @@ fn log_path(app: &AppHandle) -> Option<PathBuf> {
     let directory = app.path().app_log_dir().ok()?;
     std::fs::create_dir_all(&directory).ok()?;
     Some(directory.join("engine.log"))
+}
+
+/// The log's location as plain text, for the diagnostics the user can copy.
+/// A path is not a secret, and "gdzie jest log" is the first question support
+/// asks.
+fn log_text(path: &Option<PathBuf>) -> String {
+    path.as_ref()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 fn append_line(path: &Option<PathBuf>, line: &str) {
@@ -187,7 +244,11 @@ fn start_engine(app: &AppHandle) {
 
     let mut command = Command::new(engine_binary());
     command
-        .args(["serve", "--print-token", "--port", "8756"])
+        // Port 0: the engine binds whatever is free and prints back the real
+        // address, which we parse below. Asking for 8756 meant that a stale
+        // sidecar — or anything else on that port — made the engine die on
+        // "address already in use" with nobody to report it to.
+        .args(["serve", "--print-token", "--port", "0"])
         // The engine speaks Polish. Without these, a Python started with no
         // console picks cp1250 on Windows and the handshake line dies on its
         // first "ł" — before the window ever learns the address or the token.
@@ -212,7 +273,11 @@ fn start_engine(app: &AppHandle) {
                 engine_binary()
             );
             append_line(&log, &message);
-            engine.info.lock().expect("engine info poisoned").error = message;
+            let mut info = engine.info.lock().expect("engine info poisoned");
+            info.error = message;
+            info.phase = Phase::Failed;
+            info.log = log_text(&log);
+            engine.settled.notify_all();
             return;
         }
     };
@@ -244,15 +309,17 @@ fn start_engine(app: &AppHandle) {
                 // reader closes the pipe, and the engine's next write to stdout
                 // would then fail underneath it.
                 if !settled && !base.is_empty() && !token.is_empty() {
-                    *handle
-                        .state::<Engine>()
-                        .info
-                        .lock()
-                        .expect("engine info poisoned") = EngineInfo {
+                    let state = handle.state::<Engine>();
+                    *state.info.lock().expect("engine info poisoned") = EngineInfo {
                         base: base.clone(),
                         token: token.clone(),
                         error: String::new(),
+                        phase: Phase::Ready,
+                        exit_code: None,
+                        log: log_text(&log),
                     };
+                    // Releases whoever is blocked in `engine_info`.
+                    state.settled.notify_all();
                     settled = true;
                 }
             });
@@ -265,6 +332,56 @@ fn start_engine(app: &AppHandle) {
             read_lines_lossy(stderr, |line| append_line(&log, &line));
         });
     }
+
+    // Supervision. Without this, a sidecar that starts and then dies — a taken
+    // port, a missing DLL, a corrupt state directory — leaves the window
+    // waiting on a handshake that will never come, with no exit code and no
+    // reason to show. Polling with `try_wait` rather than blocking in `wait`,
+    // because the child lives behind the same mutex `stop_engine` needs: a
+    // supervisor holding it across a blocking wait would deadlock shutdown.
+    let supervisor = app.clone();
+    let supervised = log.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(250));
+        let state = supervisor.state::<Engine>();
+        let exited = {
+            let mut slot = state.child.lock().expect("engine child poisoned");
+            match slot.as_mut() {
+                // Taken away by `stop_engine`: that exit was asked for.
+                None => return,
+                Some(process) => match process.try_wait() {
+                    Ok(Some(status)) => status.code(),
+                    Ok(None) => continue,
+                    Err(_) => None,
+                },
+            }
+        };
+
+        let mut info = state.info.lock().expect("engine info poisoned");
+        info.exit_code = exited;
+        if info.phase != Phase::Ready {
+            info.phase = Phase::Failed;
+            info.log = log_text(&supervised);
+            if info.error.is_empty() {
+                info.error = match exited {
+                    Some(code) => {
+                        format!("Silnik zakończył się z kodem {code}, zanim zdążył odpowiedzieć.")
+                    }
+                    None => "Silnik zniknął, zanim zdążył odpowiedzieć.".into(),
+                };
+            }
+            append_line(&supervised, &info.error);
+        } else {
+            // It was working and then stopped. The window finds out through
+            // the socket dropping, but the exit code belongs in diagnostics.
+            append_line(
+                &supervised,
+                &format!("--- silnik zakończył się (kod {exited:?}) ---"),
+            );
+        }
+        state.settled.notify_all();
+        return;
+    });
 
     *engine.child.lock().expect("engine child poisoned") = Some(child);
 }
@@ -293,6 +410,29 @@ fn read_lines_lossy(pipe: impl std::io::Read, mut on_line: impl FnMut(String)) {
 }
 
 fn attach_to_running() -> Option<EngineInfo> {
+    // Where a running engine says it is. Written by `garis serve` and removed
+    // on the way out — see `Paths.runtime_file`. Probing a fixed port instead
+    // is what tied the shell to 8756: when anything else held that port the
+    // engine died on bind, and when a *stale* file pointed at a dead engine
+    // the shell attached to nothing. Hence both checks below.
+    let home = std::env::var("GARIS_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| dirs_home().map(|home| home.join(".local").join("share").join("garis")))?;
+    let raw = std::fs::read_to_string(home.join("runtime.json")).ok()?;
+    let base = raw.split("\"url\"").nth(1)?.split('"').nth(1)?.to_string();
+    if !base.starts_with("http://127.0.0.1:") {
+        return None; // never attach to anything off the loopback
+    }
+
+    // The address existing is not the same as an engine answering it.
+    let authority = base.trim_start_matches("http://");
+    let probe = std::net::TcpStream::connect_timeout(
+        &authority.parse().ok()?,
+        std::time::Duration::from_millis(400),
+    );
+    probe.ok()?;
+
     let output = Command::new(engine_binary()).arg("token").output().ok()?;
     if !output.status.success() {
         return None;
@@ -301,16 +441,39 @@ fn attach_to_running() -> Option<EngineInfo> {
     if token.is_empty() {
         return None;
     }
-    let probe = std::net::TcpStream::connect_timeout(
-        &"127.0.0.1:8756".parse().ok()?,
-        std::time::Duration::from_millis(400),
-    );
-    probe.ok()?;
     Some(EngineInfo {
-        base: "http://127.0.0.1:8756".into(),
+        base,
         token,
         error: String::new(),
+        phase: Phase::Ready,
+        exit_code: None,
+        log: String::new(),
     })
+}
+
+/// Pull the engine's address out of `runtime.json`, refusing anything that is
+/// not loopback.
+///
+/// Hand-parsed rather than pulling in a JSON crate for one field — and the
+/// loopback check is the security half: this file is written by the engine, but
+/// a shell that trusted whatever address it found would happily send the local
+/// token to any host somebody wrote into it.
+fn loopback_url(raw: &str) -> Option<String> {
+    let base = raw.split("\"url\"").nth(1)?.split('"').nth(1)?.to_string();
+    let authority = base.strip_prefix("http://")?;
+    let (host, port) = authority.rsplit_once(':')?;
+    if host != "127.0.0.1" || port.parse::<u16>().is_err() {
+        return None;
+    }
+    Some(base)
+}
+
+/// The user's home directory, without pulling in a crate for one lookup.
+fn dirs_home() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(PathBuf::from)
 }
 
 fn engine_binary() -> String {
@@ -459,4 +622,59 @@ fn main() {
             RunEvent::Exit => stop_engine(app),
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_address_a_running_engine_published() {
+        let raw = r#"{"url": "http://127.0.0.1:54321", "pid": 4242, "protocol": 1}"#;
+        assert_eq!(loopback_url(raw).as_deref(), Some("http://127.0.0.1:54321"));
+    }
+
+    #[test]
+    fn accepts_any_port_because_the_engine_picks_one() {
+        // The whole point of the fix: 8756 is no longer special.
+        for port in ["8756", "1", "65535"] {
+            let raw = format!(r#"{{"url": "http://127.0.0.1:{port}"}}"#);
+            assert!(loopback_url(&raw).is_some(), "port {port}");
+        }
+    }
+
+    #[test]
+    fn refuses_to_send_the_token_anywhere_but_loopback() {
+        // A runtime file is not a trusted document: it is a file on disk that
+        // anything running as this user can write.
+        for hostile in [
+            r#"{"url": "http://10.0.0.5:8756"}"#,
+            r#"{"url": "http://evil.example.com:8756"}"#,
+            r#"{"url": "https://127.0.0.1:8756"}"#,
+            r#"{"url": "http://127.0.0.1.evil.com:8756"}"#,
+        ] {
+            assert_eq!(loopback_url(hostile), None, "{hostile}");
+        }
+    }
+
+    #[test]
+    fn survives_a_runtime_file_that_is_rubbish() {
+        for broken in [
+            "",
+            "{",
+            "{}",
+            r#"{"url": ""}"#,
+            r#"{"url": "http://127.0.0.1:port"}"#,
+        ] {
+            assert_eq!(loopback_url(broken), None, "{broken:?}");
+        }
+    }
+
+    #[test]
+    fn a_starting_engine_is_not_a_failed_one() {
+        // The defect this release fixes, as a type-level assertion: Starting
+        // and Failed are different phases, and the window branches on them.
+        assert_ne!(Phase::default(), Phase::Failed);
+        assert_eq!(Phase::default(), Phase::Starting);
+    }
 }

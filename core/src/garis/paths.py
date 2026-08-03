@@ -39,6 +39,18 @@ class Paths:
 
     # --- files ---
     @property
+    def runtime_file(self) -> Path:
+        """Where a *running* engine says it can be reached.
+
+        The desktop shell starts the engine on port 0 and reads the address off
+        the pipe, but a shell that opens later — after a crash, a second window,
+        an engine somebody started by hand — has no pipe to read. This file is
+        how it finds an engine that is already up instead of starting a second
+        one on the same database. It holds an address and a pid, never a token.
+        """
+        return self.home / "runtime.json"
+
+    @property
     def config_file(self) -> Path:
         return self.home / "config.json"
 

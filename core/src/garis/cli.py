@@ -404,6 +404,10 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
     if not args.no_api:
         api = ApiServer(garis, host=args.host, port=args.port)
         await api.start()
+        _publish_runtime(garis, api)
+        # The handshake the desktop shell parses. `API:` first, then `Token:`,
+        # then the ready line — the shell treats the pair as readiness, so the
+        # order here is a contract, not a preference.
         _out(f"API: {api.url}")
         if args.print_token:
             _out(_dim(f"Token: {api.token}"))
@@ -411,6 +415,7 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
             _out(_dim("Token: garis serve --print-token (albo garis vault list)"))
 
     _out(f"GARIS działa. Katalog: {garis.paths.home}. Zakończ: Ctrl+C.")
+    _stop_on_signals()
     subscription = garis.bus.subscribe(Topic.TASK_FINISHED, Topic.TASK_FAILED,
                                        Topic.TASK_BLOCKED, Topic.NOTICE)
     try:
@@ -430,7 +435,68 @@ async def cmd_serve(garis: Garis, args: argparse.Namespace) -> int:
         await garis.stop()
         if api is not None:
             await api.stop()
+        _withdraw_runtime(garis)
     return EXIT_OK
+
+
+def _stop_on_signals() -> None:
+    """Turn a polite kill into the same clean shutdown as Ctrl+C.
+
+    The desktop shell stops the engine with SIGTERM. Without this the process
+    dies mid-statement, so ``runtime.json`` survives it and the next shell finds
+    an address pointing at nothing. (Windows cannot catch its equivalent, which
+    is why the shell probes the address before trusting it — belt and braces,
+    because only one of the two works on any given platform.)
+    """
+    import signal
+
+    loop = asyncio.get_running_loop()
+    for name in ("SIGTERM", "SIGINT"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            loop.add_signal_handler(number, _ask_to_stop)
+        except (NotImplementedError, RuntimeError):
+            # Windows, or a loop that will not take handlers. The `finally` in
+            # cmd_serve still runs for Ctrl+C there.
+            return
+
+
+def _ask_to_stop() -> None:
+    """Cancel the event pump, which unwinds into ``cmd_serve``'s cleanup."""
+    for task in asyncio.all_tasks():
+        if task is not asyncio.current_task():
+            task.cancel()
+
+
+def _publish_runtime(garis: Garis, api: Any) -> None:
+    """Say where this engine is listening, for a shell with no pipe to read.
+
+    Deliberately no token: the address is not a secret and the token is, and
+    they must not share a file that anything on the machine can read.
+    """
+    import os
+
+    garis.paths.ensure()
+    payload = {
+        "url": api.url,
+        "pid": os.getpid(),
+        "protocol": 1,
+        "version": __version__,
+        "started_at": time.time(),
+    }
+    tmp = garis.paths.runtime_file.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), "utf-8")
+    os.replace(tmp, garis.paths.runtime_file)
+
+
+def _withdraw_runtime(garis: Garis) -> None:
+    """Take the address down on the way out, so nobody attaches to a corpse."""
+    import contextlib
+
+    with contextlib.suppress(OSError):
+        garis.paths.runtime_file.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------- parsing
