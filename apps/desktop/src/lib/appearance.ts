@@ -23,7 +23,8 @@ export interface Appearance {
   text_scale: number;
   animation: "system" | "full" | "off";
   orb: "full" | "simple" | "off";
-  navigation: "labels" | "rail";
+  /** "auto" follows the window; see lib/nav.ts. */
+  navigation: "auto" | "labels" | "rail";
   sounds: boolean;
   high_contrast: boolean;
 }
@@ -36,7 +37,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   text_scale: 1,
   animation: "system",
   orb: "full",
-  navigation: "labels",
+  navigation: "auto",
   sounds: false,
   high_contrast: false,
 };

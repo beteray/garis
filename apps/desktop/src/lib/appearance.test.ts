@@ -116,7 +116,7 @@ describe("the whole default look", () => {
     expect(dataset.theme).toBe("dark");
     expect(dataset.density).toBe("comfortable");
     expect(dataset.contrast).toBe("normal");
-    expect(dataset.navigation).toBe("labels");
+    expect(dataset.navigation).toBe("auto");
     expect(root().style.getPropertyValue("--accent-hsl")).toBe(accentTriple("cyan"));
   });
 

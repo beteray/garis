@@ -99,7 +99,7 @@ export function Home({ state }: { state: RuntimeState }) {
         {chat.length === 0 ? (
           <Empty
             icon="◎"
-            title="Powiedz, co ma być zrobione."
+            title="Jeszcze nic tu nie ma."
             hint="Albo po prostu się przywitaj — nie zrobię z tego zadania."
           />
         ) : (

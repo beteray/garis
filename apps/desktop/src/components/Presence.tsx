@@ -26,7 +26,8 @@ export interface PresenceProps {
   state: RuntimeState;
   /** rem-ish: the dot scales with text, so 175% Windows scaling grows it too. */
   size?: number;
-  /** Hide the word — only where the label is already on screen beside it. */
+  /** Drop the word and the live region — only where the state is already
+   *  written out next to it, so a reader is not told the same thing twice. */
   compact?: boolean;
 }
 
@@ -41,9 +42,11 @@ export function Presence({ state, size = 10, compact = false }: PresenceProps) {
       className="presence"
       // One live region for the whole application's status. Announced when it
       // changes, never interrupting — "polite" is the difference between a
-      // status line and a shout.
-      role="status"
-      aria-live="polite"
+      // status line and a shout. A compact indicator is decoration beside text
+      // that already says it, so it announces nothing.
+      role={compact ? undefined : "status"}
+      aria-live={compact ? undefined : "polite"}
+      aria-hidden={compact || undefined}
       data-state={state}
     >
       <motion.span
@@ -63,7 +66,7 @@ export function Presence({ state, size = 10, compact = false }: PresenceProps) {
       <span className="presence__mark" aria-hidden style={{ color: look.tone }}>
         {look.mark}
       </span>
-      <span className={compact ? "sr-only" : "presence__label tiny"}>{look.label}</span>
+      {!compact && <span className="presence__label tiny">{look.label}</span>}
     </span>
   );
 }
@@ -80,7 +83,7 @@ export function PresenceBanner({
 }) {
   const look = PRESENTATION[state] ?? PRESENTATION.idle;
   return (
-    <div className="presence-banner" data-state={state}>
+    <div className="presence-banner" data-state={state} role="status" aria-live="polite">
       <Presence state={state} size={12} compact />
       <div className="presence-banner__text">
         <strong>{look.label}</strong>
