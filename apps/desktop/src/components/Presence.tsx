@@ -21,6 +21,8 @@ import type { RuntimeState } from "../lib/runtimeState";
 import { PRESENTATION } from "../lib/runtimeState";
 import { prefersReducedMotion } from "../lib/motion";
 import { useDocumentVisible } from "../lib/useDocumentVisible";
+import { useStore } from "../lib/store";
+import { Orb } from "./Orb";
 
 export interface PresenceProps {
   state: RuntimeState;
@@ -71,7 +73,13 @@ export function Presence({ state, size = 10, compact = false }: PresenceProps) {
   );
 }
 
-/** The same state as a full-width banner, for the top of Home. */
+/**
+ * The same state as a banner, with the orb.
+ *
+ * This is the only place the orb appears at a size where it reads as the
+ * application's face rather than as a status dot. It sits at the top of Home,
+ * beside the words — never instead of them.
+ */
 export function PresenceBanner({
   state,
   detail,
@@ -81,10 +89,16 @@ export function PresenceBanner({
   detail?: string;
   action?: React.ReactNode;
 }) {
+  const quality = useStore((s) => s.engine?.appearance.orb ?? "full");
   const look = PRESENTATION[state] ?? PRESENTATION.idle;
+
   return (
     <div className="presence-banner" data-state={state} role="status" aria-live="polite">
-      <Presence state={state} size={12} compact />
+      {quality === "off" ? (
+        <Presence state={state} size={12} compact />
+      ) : (
+        <Orb state={state} size={quality === "simple" ? 34 : 46} />
+      )}
       <div className="presence-banner__text">
         <strong>{look.label}</strong>
         {detail && <span className="tiny soft">{detail}</span>}

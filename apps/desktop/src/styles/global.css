@@ -1266,3 +1266,104 @@ p { margin: 0; }
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------- orb
+ *
+ * Six blurred colour fields on the compositor, seen through one shared blur.
+ * Everything here is transform/opacity/filter on already-composited layers, so
+ * the animation never touches layout. The whole thing degrades to a still
+ * gradient when `data-motion="off"` — the fields simply stop moving.
+ */
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  /* Contains the blur so it cannot bleed into siblings, and gives the browser
+   * a hint that this subtree is its own paint job. */
+  isolation: isolate;
+  contain: layout paint;
+}
+
+.orb__cluster {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity var(--dur-slow) var(--ease-glass),
+    filter var(--dur-slow) var(--ease-glass);
+}
+
+.orb__field {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.orb__tint {
+  transition: opacity var(--dur-slow) var(--ease-glass);
+}
+
+/* The waiting ring: present only while the engine is asking for something. */
+.orb__edge {
+  position: absolute;
+  inset: -6%;
+  border-radius: 50%;
+  border: 1px solid;
+  pointer-events: none;
+}
+
+/* One soft specular, deliberately off-centre and not a ball highlight. */
+.orb__sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    58% 46% at 34% 26%,
+    rgba(255, 255, 255, 0.30),
+    rgba(255, 255, 255, 0.05) 42%,
+    transparent 68%
+  );
+  mix-blend-mode: soft-light;
+}
+
+/* Light theme: the same cluster on a bright surface needs less brightness and
+ * a touch more saturation, or it washes to pastel mush. */
+:root[data-theme="light"] .orb__cluster {
+  filter: saturate(1.15) contrast(1.05);
+}
+
+:root[data-theme="light"] .orb__sheen {
+  background: radial-gradient(
+    58% 46% at 34% 26%,
+    rgba(255, 255, 255, 0.55),
+    transparent 62%
+  );
+}
+
+/* High contrast drops translucency everywhere else, so the orb follows: a hard
+ * ring and a flat fill, still colour-coded, still legible. */
+:root[data-contrast="high"] .orb__cluster {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+:root[data-contrast="high"] .orb__sheen {
+  display: none;
+}
+
+:root[data-contrast="high"] .orb {
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  overflow: hidden;
+}
+
+/* The user turned the indicator off. It still occupies its place and still
+ * carries its accessible name — it simply stops moving and dims. */
+:root[data-orb="off"] .orb__cluster {
+  animation: none;
+  opacity: 0.5;
+}
