@@ -29,6 +29,11 @@ export type TaskState =
 
 export interface Report {
   short: string;
+  /** The measured result in one sentence, when the work produced one — built by
+   *  the engine from a tool's own numbers, never from a model. `short` leads
+   *  with it when it exists; empty means nothing measurable came back, which is
+   *  itself the honest answer. */
+  answer?: string;
   details?: string;
   verified?: boolean;
   problems?: string[];

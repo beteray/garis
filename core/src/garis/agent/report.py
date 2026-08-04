@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import reflex
 from .goal import Goal, Plan
 from .verify import StepEvidence, Verification
 
@@ -27,6 +28,10 @@ class Report:
     developer: dict[str, Any] = field(default_factory=dict)
     verified: bool = False
     problems: tuple[str, ...] = ()
+    #: The measured result in one sentence, when the work produced one — built
+    #: from the tool's own numbers. Empty when nothing measurable came back,
+    #: which is itself the honest answer.
+    answer: str = ""
 
     def render(self, *, verbose: bool = False) -> str:
         return f"{self.short}\n\n{self.details}".strip() if verbose and self.details \
@@ -39,6 +44,7 @@ class Report:
             "verified": self.verified,
             "problems": list(self.problems),
             "developer": self.developer,
+            "answer": self.answer,
         }
 
 
@@ -60,15 +66,24 @@ def build_report(
     if verification.unmet:
         problems += list(verification.unmet)
 
-    headline = _headline(goal, verification, done, failed)
+    # The answer, when the work produced one. A person who asked how much disk
+    # is left wants the number, not their own sentence read back with "gotowe"
+    # in front of it — which is precisely what this used to say, while the
+    # measured bytes sat unused two fields away in `details`.
+    measured = _measured_answer(done)
+
+    headline = measured or _headline(goal, verification, done, failed)
     pieces = [headline]
 
-    if verification.ok:
-        checked = ("Sprawdziłem rezultat." if verification.checked_by == "model"
-                   else "Wszystkie kroki przeszły bez błędów.")
-        pieces.append(verification.note or checked)
-    elif verification.note:
-        pieces.append(verification.note)
+    if not measured:
+        if verification.ok and verification.checked:
+            pieces.append(verification.note or "Sprawdziłem rezultat.")
+        elif verification.ok:
+            # Nothing checked the outcome. Say that, in place of the note that
+            # used to imply the opposite.
+            pieces.append(verification.note or "Nie sprawdzałem rezultatu.")
+        elif verification.note:
+            pieces.append(verification.note)
 
     if repairs:
         pieces.append(
@@ -99,6 +114,7 @@ def build_report(
 
     return Report(
         short=short,
+        answer=measured,
         details="\n".join(detail_lines),
         developer={
             "plan": plan.to_dict(),
@@ -116,7 +132,9 @@ def build_report(
             "duration_seconds": round(duration_seconds, 2),
             "repairs": repairs,
         },
-        verified=verification.ok,
+        # "Verified" is a claim about a check that ran, not about the absence of
+        # errors. Both halves are required, and both come from the verifier.
+        verified=verification.ok and verification.checked,
         problems=tuple(problems),
     )
 
@@ -153,6 +171,21 @@ def _headline(
     if not done:
         return f"Nie wykonałem nic dla: {subject}."
     return f"Częściowo zrobione: {subject}."
+
+
+def _measured_answer(done: list[StepEvidence]) -> str:
+    """One sentence built from what a tool actually returned, or nothing.
+
+    Only for results this codebase knows how to read — the reflex table. Guessing
+    a sentence out of an arbitrary tool's output would be the same invention this
+    file exists to avoid; for everything else the caller falls back to naming the
+    goal, which at least does not claim more than it knows.
+    """
+    for item in done:
+        sentence = reflex.answer(item.tool, item.value)
+        if sentence:
+            return sentence
+    return ""
 
 
 def _trim(text: str, limit: int = 120) -> str:
