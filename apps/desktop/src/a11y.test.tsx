@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { Composer } from "./components/Composer";
@@ -148,5 +149,23 @@ describe("a route change", () => {
         "Pamięć",
       ),
     );
+  });
+
+  it("focuses nothing on its own when the window opens", async () => {
+    // React's StrictMode mounts an effect, tears it down and mounts it again. An
+    // effect that tracked "have I run before?" with a flag read that second run
+    // as a route change and moved focus to the stage — which drew a focus ring
+    // around the entire window on every cold start.
+    given({ engine: engine() });
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    await screen.findByRole("button", { name: /Zadania/ });
+    const stage = () => document.querySelector("main.shell__stage");
+    await waitFor(() => expect(stage()).toBeInTheDocument());
+    expect(document.activeElement).not.toBe(stage());
   });
 });

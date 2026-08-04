@@ -152,13 +152,15 @@ export default function App() {
   // has focus on that item, and stealing it would move the keyboard away from
   // the list they are moving through — and light up a ring around the whole
   // window for a pointer user who asked for none of this.
+  // Compared by value, not by a "first run" flag: StrictMode runs an effect,
+  // tears it down and runs it again on mount, and a flag reads that second run
+  // as a route change — which put a focus ring around the whole window the
+  // moment the app opened.
   const stage = useRef<HTMLElement | null>(null);
-  const first = useRef(true);
+  const shown = useRef(view);
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
+    if (shown.current === view) return;
+    shown.current = view;
     const lost = !document.activeElement || document.activeElement === document.body;
     if (lost) stage.current?.focus();
   }, [view]);
