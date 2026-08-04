@@ -1395,14 +1395,11 @@ p { margin: 0; }
   flex-wrap: wrap;
 }
 
-/* The textarea has no border of its own, so the ring goes on the surface that
- * does. Both `outline: none` declarations that used to be here — one on every
- * .field, one on this textarea — meant a keyboard user could be typing into a
- * box with nothing to show for it. */
-.composer__field:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* No ring on the wrapper: the textarea inside draws its own from the rule every
+ * other control uses, and two rings — one around the field, one around the text
+ * area inside it — read as an error state rather than as focus. The `outline:
+ * none` that used to be on this textarea is gone, which is what makes the inner
+ * ring appear at all. */
 
 .composer__input {
   flex: 1;

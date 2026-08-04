@@ -15,7 +15,7 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import type { ChatEntry } from "../lib/store";
-import { ENTRY } from "../lib/chat";
+import { ENTRY, outcomeOf } from "../lib/chat";
 import { useStore } from "../lib/store";
 import { variants } from "../lib/motion";
 import { relativeTime } from "./ui";
@@ -115,7 +115,19 @@ function ApprovalCard({ entry }: { entry: ChatEntry }) {
 
 export function Message({ entry }: { entry: ChatEntry }) {
   const developer = useStore((s) => s.engine?.dev.developer_mode ?? false);
-  const look = ENTRY[entry.kind] ?? ENTRY.notice;
+  const task = useStore((s) => s.tasks.find((candidate) => candidate.id === entry.taskId));
+
+  // "Zrobione i sprawdzone" versus "Zrobione, niesprawdzone" is decided here,
+  // at render, from the task's own report — not when the event arrived. The
+  // `task.finished` event carries only the report text, and the task in the
+  // store is still the pre-finish copy at that moment, so the entry was written
+  // as unverified and the card beside it then said the opposite. One claim, one
+  // source: whatever the engine last said about this task.
+  const kind =
+    task && (entry.kind === "verified" || entry.kind === "unverified")
+      ? outcomeOf(task.report)
+      : entry.kind;
+  const look = ENTRY[kind] ?? ENTRY.notice;
   const mine = entry.kind === "user";
 
   // A task entry is a card, not a sentence: the conversation is where work
@@ -148,7 +160,7 @@ export function Message({ entry }: { entry: ChatEntry }) {
   return (
     <motion.article
       className="message"
-      data-kind={entry.kind}
+      data-kind={kind}
       data-emphasis={look.emphasis}
       data-mine={mine || undefined}
       variants={variants("message")}

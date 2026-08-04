@@ -49,3 +49,6 @@ apps/desktop/tools/shots/
 # Visual-fixture screenshots (regenerate: npm run shots). Pictures of the
 # window, not evidence about the engine — and 27 MB of them.
 apps/desktop/screenshots/
+
+# Live drive-through of the real engine (npm run live). Working images.
+apps/desktop/live/

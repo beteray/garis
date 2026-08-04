@@ -239,3 +239,19 @@ describe("composer", () => {
     expect(screen.getByText("Przyjmuję")).toBeInTheDocument();
   });
 });
+
+describe("what a finished task claims", () => {
+  it("says checked or unchecked from the task, not from the moment the event arrived", () => {
+    // `task.finished` carries only the report text. The task in the store is
+    // still the pre-finish copy at that instant, so the entry used to be written
+    // as unverified while the card beside it said "Zrobione i sprawdzone".
+    given({
+      tasks: [task({ state: "finished", report: { short: "Gotowe.", verified: true } })],
+      chat: [entry({ kind: "unverified", taskId: "t1", text: "Gotowe." })],
+    });
+    render(<Home state="completed" />);
+
+    expect(screen.getAllByText("Zrobione i sprawdzone").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Zrobione, niesprawdzone")).toBeNull();
+  });
+});
