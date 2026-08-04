@@ -75,11 +75,14 @@ async def test_disk_question_runs_a_real_disk_inspection(garis) -> None:
 
 async def test_the_disk_answer_is_built_from_the_numbers_that_came_back() -> None:
     """2, again, at the seam where a sentence could be invented instead."""
-    value = {"path": "C:\\", "total": 476 * 1024**3, "free": 84_508_000_000,
-             "used": 0, "percent_used": 82.0}
+    total = 476 * 1024**3
+    free = 84_508_000_000
+    value = {"path": "C:\\", "total": total, "free": free, "used": total - free,
+             "filesystem_used": total - free, "reserved": 0,
+             "percent_used": round((total - free) / total * 100, 1)}
     sentence = reflex.answer("disk_usage", value)
     assert "78,7 GB" in sentence and "476,0 GB" in sentence
-    assert "82%" in sentence
+    assert "83%" in sentence
 
 
 async def test_a_disk_reading_that_makes_no_sense_is_not_verified() -> None:
@@ -281,10 +284,14 @@ def test_a_model_plan_cannot_claim_to_be_a_reflex() -> None:
 
 def test_a_temp_directory_is_measured_not_guessed(tmp_path: Path) -> None:
     """The disk numbers come from the filesystem, wherever it is asked about."""
-    usage = shutil.disk_usage(tmp_path)
-    value = {"path": str(tmp_path), "total": usage.total, "free": usage.free,
-             "used": usage.used, "percent_used": round(usage.used / usage.total * 100, 1)}
+    from garis.tools.system import _disk_bytes
+
+    value = _disk_bytes(str(tmp_path))
+    truth = shutil.disk_usage(tmp_path)
+    assert value["total"] == truth.total
+    assert value["free"] == truth.free
     assert reflex.check("disk_usage", value) == ""
+
     sentence = reflex.answer("disk_usage", value)
     assert str(tmp_path) in sentence
-    assert f"{usage.free / 1024 ** 3:.1f}".replace(".", ",") in sentence
+    assert f"{truth.free / 1024 ** 3:.1f}".replace(".", ",") in sentence

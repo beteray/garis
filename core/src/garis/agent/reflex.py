@@ -83,7 +83,27 @@ def _number(value: Any) -> float | None:
 # ----------------------------------------------------------------- disk space
 
 
+#: How far the numbers may drift from each other before the set is incoherent.
+#: A megabyte of slack on a real disk is rounding; on a nonsense reading of ten
+#: bytes it would swallow the nonsense, so the allowance is also capped at a
+#: thousandth of the whole.
+TOLERANCE_BYTES = 1024 * 1024
+TOLERANCE_PERCENT = 0.15
+
+
+def _slack(total: float) -> float:
+    return max(min(TOLERANCE_BYTES, total / 1000), 1.0)
+
+
 def _validate_disk(value: Any) -> str:
+    """Range checks *and* consistency checks.
+
+    Checking `free <= total` was not enough: a container reported 252 GB total,
+    24,1 GB free and 5% used, and every one of those passed while the set as a
+    whole said two incompatible things. The percentage now has to follow from the
+    same subtraction as the free space, and the parts have to add up to the
+    whole.
+    """
     if not isinstance(value, dict):
         return "narzędzie nie zwróciło danych o dysku"
     total = _number(value.get("total"))
@@ -92,22 +112,55 @@ def _validate_disk(value: Any) -> str:
         return "brak zmierzonego rozmiaru dysku w wyniku"
     if total <= 0:
         return "zmierzony rozmiar dysku to zero"
-    if free > total:
+    slack = _slack(total)
+    if free > total + slack:
         return "wolne miejsce większe niż pojemność — wynik nie ma sensu"
+
+    used = _number(value.get("used"))
+    if used is not None and abs((total - free) - used) > slack:
+        return "zajęte + wolne nie sumuje się do pojemności"
+
+    percent = _number(value.get("percent_used"))
+    if percent is not None:
+        expected = (total - free) / total * 100
+        if abs(percent - expected) > TOLERANCE_PERCENT:
+            return (
+                f"procent zajętości ({percent:.1f}%) nie zgadza się z wolnym "
+                f"miejscem ({expected:.1f}%)"
+            )
+
+    reserved = _number(value.get("reserved"))
+    filesystem_used = _number(value.get("filesystem_used"))
+    if reserved is not None and filesystem_used is not None and used is not None:
+        if abs(filesystem_used + reserved - used) > slack:
+            return "zajęte przez pliki + zarezerwowane nie sumuje się do zajętych"
     return ""
 
 
 def _present_disk(value: Any) -> str:
+    """One sentence whose numbers agree with each other.
+
+    The percentage is the same subtraction as the free space, and where a quota
+    makes "free on the disk" differ from "free to you" the sentence says so
+    instead of leaving the reader to reconcile two figures that cannot be
+    reconciled from the outside.
+    """
     assert isinstance(value, dict)
     where = str(value.get("path") or "").strip()
     total = _number(value.get("total")) or 0.0
     free = _number(value.get("free")) or 0.0
-    used_percent = _number(value.get("percent_used"))
     place = f"Na {where}" if where else "Na dysku"
-    sentence = f"{place} zostało {_gib(free)} z {_gib(total)}."
-    if used_percent is not None:
-        percent = f"{used_percent:.0f}".replace(".", ",")
-        sentence += f" Zajęte: {percent}%."
+    percent = (total - free) / total * 100 if total else 0.0
+    sentence = f"{place} zostało {_gib(free)} z {_gib(total)} — zajęte {percent:.0f}%."
+
+    reserved = _number(value.get("reserved")) or 0.0
+    # Only when it is big enough to be the thing that confuses the reader.
+    if total and reserved / total > 0.01:
+        files = _number(value.get("filesystem_used")) or 0.0
+        sentence += (
+            f" Pliki zajmują {_gib(files)}; pozostałe {_gib(reserved)} jest wolne"
+            " na woluminie, ale niedostępne tutaj (limit systemu lub kontenera)."
+        )
     return sentence
 
 
@@ -123,6 +176,17 @@ def _validate_memory(value: Any) -> str:
         return "brak zmierzonej pamięci w wyniku"
     if total <= 0:
         return "zmierzona pamięć to zero"
+    slack = _slack(total)
+    if available > total + slack:
+        return "wolnej pamięci więcej niż całej — wynik nie ma sensu"
+    used = _number(value.get("used"))
+    if used is not None and abs((total - available) - used) > slack:
+        return "zajęta + wolna pamięć nie sumuje się do całości"
+    percent = _number(value.get("percent_used"))
+    if percent is not None:
+        expected = (total - available) / total * 100
+        if abs(percent - expected) > TOLERANCE_PERCENT:
+            return "procent zajętej pamięci nie zgadza się z wolną"
     return ""
 
 
@@ -130,7 +194,8 @@ def _present_memory(value: Any) -> str:
     assert isinstance(value, dict)
     total = _number(value.get("total")) or 0.0
     available = _number(value.get("available")) or 0.0
-    return f"Wolnej pamięci: {_gib(available)} z {_gib(total)}."
+    percent = (total - available) / total * 100 if total else 0.0
+    return f"Wolnej pamięci: {_gib(available)} z {_gib(total)} — zajęte {percent:.0f}%."
 
 
 # ------------------------------------------------------------------ the system

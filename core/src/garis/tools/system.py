@@ -60,14 +60,7 @@ def register(registry: ToolRegistry) -> None:
     )
     async def disk_usage(ctx: ToolContext, path: str = "") -> dict[str, Any]:
         target = path or ("C:\\" if sys.platform == "win32" else "/")
-        usage = await asyncio.to_thread(shutil.disk_usage, target)
-        return {
-            "path": target,
-            "total": usage.total,
-            "used": usage.used,
-            "free": usage.free,
-            "percent_used": round(usage.used / usage.total * 100, 1) if usage.total else 0.0,
-        }
+        return await asyncio.to_thread(_disk_bytes, target)
 
     @registry.tool(
         "memory_usage",
@@ -489,6 +482,78 @@ def _disks() -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _disk_bytes(target: str) -> dict[str, Any]:
+    """Every disk number, each one named for what it actually measures.
+
+    Four different quantities used to be reported as three, and the shapes
+    overlapped: a container run showed 252 GB total, 24,1 GB free and 5% used —
+    all three true, none of them about the same thing. `total - free` is 90% of
+    the disk, not 5%, and a person reading the sentence cannot reconcile them.
+
+    What is going on: on this host 239 GB is free *on the filesystem*, but only
+    24 GB of it is available to this user — the rest is a quota. The 5% was
+    `blocks in use ÷ total`, which answers "how full is the disk" while `free`
+    answers "how much may I write". Both are worth knowing and neither may stand
+    in for the other, so all of them are returned, and the one pair that must
+    agree — `used`, `free` and `percent_used` — is derived from a single
+    subtraction:
+
+        used = total - free_available
+        percent_used = used / total
+
+    Windows uses `GetDiskFreeSpaceExW`, which draws exactly the same distinction
+    (`lpFreeBytesAvailableToCaller` versus `lpTotalNumberOfFreeBytes`) and is
+    what quota-aware answers on Windows have to come from.
+    """
+    total, filesystem_free, free_available = _disk_raw(target)
+    filesystem_used = max(total - filesystem_free, 0)
+    reserved = max(filesystem_free - free_available, 0)
+    used = max(total - free_available, 0)
+    return {
+        "path": target,
+        "total": total,
+        #: Writable by whoever is asking — the number that answers "how much
+        #: room have I got left".
+        "free": free_available,
+        "free_available": free_available,
+        #: Unused on the filesystem, including anything reserved from this user.
+        "filesystem_free": filesystem_free,
+        #: Occupied by files. Smaller than `used` wherever a quota applies.
+        "filesystem_used": filesystem_used,
+        #: Free on the volume but not available here: quota, root reservation,
+        #: or a container limit. `used - filesystem_used` by construction.
+        "reserved": reserved,
+        "used": used,
+        "percent_used": round(used / total * 100, 1) if total else 0.0,
+    }
+
+
+def _disk_raw(target: str) -> tuple[int, int, int]:
+    """(total, free on the filesystem, free to this caller), in bytes."""
+    if sys.platform == "win32":  # pragma: no cover - exercised on Windows only
+        import ctypes
+
+        free_to_caller = ctypes.c_ulonglong(0)
+        total_bytes = ctypes.c_ulonglong(0)
+        total_free = ctypes.c_ulonglong(0)
+        ok = ctypes.windll.kernel32.GetDiskFreeSpaceExW(  # type: ignore[attr-defined]
+            ctypes.c_wchar_p(target),
+            ctypes.byref(free_to_caller),
+            ctypes.byref(total_bytes),
+            ctypes.byref(total_free),
+        )
+        if not ok:
+            raise ExecutionError(
+                f"Windows nie podał zajętości dysku dla {target} "
+                f"(GetDiskFreeSpaceExW, błąd {ctypes.GetLastError()})"  # type: ignore[attr-defined]
+            )
+        return total_bytes.value, total_free.value, free_to_caller.value
+
+    stat = os.statvfs(target)
+    block = stat.f_frsize or stat.f_bsize
+    return stat.f_blocks * block, stat.f_bfree * block, stat.f_bavail * block
 
 
 def _memory_bytes() -> dict[str, Any]:
