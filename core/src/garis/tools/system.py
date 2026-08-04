@@ -16,6 +16,7 @@ import shutil
 import socket
 import subprocess
 import sys
+from datetime import datetime
 from typing import Any
 
 from ..errors import ExecutionError, Unsupported
@@ -66,6 +67,42 @@ def register(registry: ToolRegistry) -> None:
             "used": usage.used,
             "free": usage.free,
             "percent_used": round(usage.used / usage.total * 100, 1) if usage.total else 0.0,
+        }
+
+    @registry.tool(
+        "memory_usage",
+        "Sprawdza, ile pamięci RAM jest zajęte i ile zostało wolnej.",
+        params={},
+        effects=[Effect.READ],
+        category="system",
+    )
+    async def memory_usage(ctx: ToolContext) -> dict[str, Any]:
+        """Measured bytes, or nothing at all.
+
+        Raises rather than guessing when the host cannot be read: a made-up
+        number is worse than an honest "this machine will not tell me".
+        """
+        measured = await asyncio.to_thread(_memory_bytes)
+        if not measured:
+            raise Unsupported(
+                "Nie umiem odczytać pamięci na tym systemie (brak psutil i /proc/meminfo)"
+            )
+        return measured
+
+    @registry.tool(
+        "current_time",
+        "Podaje bieżącą datę i godzinę na tym komputerze.",
+        params={},
+        effects=[Effect.READ],
+        category="system",
+    )
+    async def current_time(ctx: ToolContext) -> dict[str, Any]:
+        now = datetime.now().astimezone()
+        return {
+            "local": now.strftime("%H:%M, %d.%m.%Y"),
+            "iso": now.isoformat(timespec="seconds"),
+            "timezone": now.tzname() or "",
+            "unix": now.timestamp(),
         }
 
     # ------------------------------------------------------------- processes
@@ -452,6 +489,49 @@ def _disks() -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _memory_bytes() -> dict[str, Any]:
+    """Total and available RAM in bytes, measured — empty when unmeasurable.
+
+    psutil first because it is right everywhere; /proc/meminfo second so a Linux
+    box without psutil still answers. Nothing is estimated: an empty dict means
+    the caller must say it does not know.
+    """
+    try:
+        import psutil  # type: ignore[import-not-found]
+    except ImportError:
+        pass
+    else:
+        virtual = psutil.virtual_memory()
+        return {
+            "total": int(virtual.total),
+            "available": int(virtual.available),
+            "used": int(virtual.total - virtual.available),
+            "percent_used": round(virtual.percent, 1),
+        }
+
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            fields = {}
+            for line in handle:
+                name, _, rest = line.partition(":")
+                value = rest.strip().split(" ")[0]
+                if value.isdigit():
+                    fields[name.strip()] = int(value) * 1024  # kB in the file
+    except OSError:
+        return {}
+
+    total = fields.get("MemTotal")
+    available = fields.get("MemAvailable", fields.get("MemFree"))
+    if not total or available is None:
+        return {}
+    return {
+        "total": total,
+        "available": available,
+        "used": total - available,
+        "percent_used": round((total - available) / total * 100, 1),
+    }
 
 
 def _memory() -> dict[str, Any]:

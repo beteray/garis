@@ -211,6 +211,14 @@ class ModelRouter:
         ) or "brak skonfigurowanych dostawców"
 
     def _no_model_sentence(self) -> str:
+        if not self.providers:
+            # Nothing configured at all — a different problem from "the key was
+            # rejected", and the only one the user can fix in thirty seconds.
+            return (
+                "Nie mam skonfigurowanego żadnego modelu, więc nie zaplanuję tego "
+                "zadania. Dodaj klucz w Ustawieniach → Modele (albo: garis vault "
+                "set openai_api_key) i zleć je ponownie."
+            )
         blocked = [
             (p.name, self.state_of(p))
             for p in self.providers

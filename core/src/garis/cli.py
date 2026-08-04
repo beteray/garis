@@ -320,7 +320,9 @@ async def cmd_doctor(garis: Garis, args: argparse.Namespace) -> int:
         _out(f"  {mark} {provider['name']}: {len(provider['models'])} modeli"
              f" — {provider['reason']}")
     if not any(p["available"] and p["name"] != "fake" for p in described["providers"]):
-        _out(_dim("  Brak kluczy API — działam na wbudowanej atrapie."))
+        _out(_dim("  Brak kluczy API — planowanie i weryfikacja są wyłączone."))
+        _out(_dim("  Proste pytania o ten komputer (dysk, pamięć, system, czas)"))
+        _out(_dim("  wykonuję bez modelu. Reszta czeka na klucz."))
         _out(_dim("  Dodaj klucz: garis vault set openai_api_key"))
     _out(_dim(f"  prywatność: {described['privacy']}, wydane: {described['spend']}"))
 
@@ -603,7 +605,12 @@ async def cmd_token(garis: Garis, args: argparse.Namespace) -> int:
 
 
 async def _run(args: argparse.Namespace) -> int:
-    garis = build(args.home, include_fake=True)
+    # No stub provider. It exists for tests; wiring it into every CLI and server
+    # process meant a machine with no API key had a "model" that answered every
+    # planning prompt with a keyword guess and every verification prompt with
+    # `{"ok": true, "note": "Sprawdzone."}`. Local questions are answered by
+    # agent/reflex.py with no model at all; anything else says a model is missing.
+    garis = build(args.home)
     try:
         return await args.handler(garis, args)
     finally:

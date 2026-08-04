@@ -102,9 +102,13 @@ def build_providers(
             continue
         providers.append(builder(key, http=http, base_url=settings.base_url))
 
-    if include_fake or not providers:
-        # GARIS must still start and do simple work with no keys configured.
+    if include_fake:
         providers.append(FakeProvider())
+    # Nothing is appended when the list is empty. GARIS used to fall back to the
+    # stub here so a machine with no key could "still do simple work" — and what
+    # it actually did was let a canned reply plan the work and then certify it.
+    # Simple local questions are answered by agent/reflex.py without any model;
+    # everything else now blocks and says a model is missing.
     return providers
 
 

@@ -19,6 +19,7 @@ from ..errors import ProviderError
 from ..memory import MemoryService
 from ..models import Job, Message, ModelRouter, Need, Privacy
 from ..runtime import ToolRegistry
+from . import reflex
 from .goal import MAX_STEPS, Goal, Plan, PlanStep
 
 SYSTEM_PROMPT = """\
@@ -118,6 +119,15 @@ class Planner:
     # ------------------------------------------------------------------ planning
 
     async def make_plan(self, goal: Goal) -> Plan:
+        # Questions this machine can answer about itself never reach a model.
+        # "Ile miejsca zostało na dysku" is a `shutil.disk_usage` call; asking a
+        # language model which tool to call for it costs a round trip, a key, and
+        # — on a machine with no key at all — used to produce a guess dressed up
+        # as a plan. See agent/reflex.py.
+        instinct = reflex.plan_for(goal, available=self._runs_here)
+        if instinct is not None:
+            return instinct
+
         messages = [
             Message.system(self._system()),
             Message.system(f"Dostępne narzędzia (JSON):\n{self._catalog(goal)}"),
@@ -172,6 +182,9 @@ class Planner:
         if not isinstance(data, dict):
             raise ProviderError(f"Plan nie jest obiektem JSON: {type(data).__name__}")
         return Plan.from_dict(data)
+
+    def _runs_here(self, tool: str) -> bool:
+        return self.registry.has(tool) and self.registry.get(tool).supported_here()
 
     # ---------------------------------------------------------------- validation
 
