@@ -119,10 +119,18 @@ class AgentLoop:
         try:
             plan = await self.planner.make_plan(goal)
         except NoModelAvailable as exc:
+            # Not a failure of the task — a missing prerequisite the user can
+            # supply. Blocked says "waiting for you" and keeps the goal, which is
+            # what a person needs to see; failed says "I tried and could not",
+            # which would be a claim about work that never started.
+            self._state(task_id, AgentState.BLOCKED)
+            question = exc.explain()
             return Outcome(
-                AgentState.FAILED,
-                failed_report(goal, exc.explain()),
+                AgentState.BLOCKED,
+                blocked_report(goal, question),
                 Plan(),
+                question=question,
+                resumable=True,
             )
         except GarisError as exc:
             return Outcome(
@@ -164,6 +172,7 @@ class AgentLoop:
                         ok=True,
                         expects=step.expects,
                         summary=_summarise(completed[step.key]),
+                        value=completed[step.key],
                         extras={"resumed": True},
                     )
                 )
@@ -210,6 +219,10 @@ class AgentLoop:
                         ok=True,
                         expects=step.expects,
                         summary=_summarise(result.value),
+                        # The tool's own return value, kept structured: the
+                        # verifier checks numbers, and a flattened string cannot
+                        # be checked at all.
+                        value=result.value,
                         extras={"duration_ms": result.duration_ms},
                     )
                 )
@@ -263,12 +276,25 @@ class AgentLoop:
             break
 
         self._state(task_id, AgentState.VERIFYING)
-        verification = await self.verifier.check(goal, evidence)
+        verification = await self.verifier.check(goal, evidence, plan=plan)
+
+        # Fail closed. "Done" requires that something actually ran and returned
+        # successfully — not that the plan finished, not that no error was
+        # raised, and certainly not that a verifier said so. A plan with no
+        # executable steps used to reach this line and be reported as done.
+        executed = [e for e in evidence if e.ok and not e.skipped]
+        state = AgentState.DONE if (executed and verification.ok) else AgentState.FAILED
+        if not executed and verification.ok:
+            verification = Verification(
+                ok=False,
+                note="Nie wykonałem żadnego kroku, więc nie ma czego uznać za zrobione.",
+                checked_by="rules",
+            )
+
         report = build_report(
             goal, plan, evidence, verification,
             duration_seconds=time.monotonic() - started, repairs=replans,
         )
-        state = AgentState.DONE if verification.ok else AgentState.FAILED
         self._state(task_id, state)
         return Outcome(state, report, plan, evidence=evidence, verification=verification)
 

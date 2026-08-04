@@ -114,6 +114,11 @@ class Completion:
     usage: Usage = field(default_factory=Usage)
     finish_reason: str = "stop"
     raw: dict[str, Any] | None = None
+    #: True when this text came from a stand-in rather than a model — the test
+    #: double, or a canned reply. Callers that act on the *content* of a reply
+    #: (the verifier above all) must refuse it: a stub that answers `{"ok":
+    #: true}` to every prompt certified work nobody had inspected.
+    stub: bool = False
 
     def json(self) -> Any:
         """Parse the reply as JSON, tolerating the ways models wrap it.
@@ -139,6 +144,8 @@ class ModelSpec:
     output_cost: float = 0.0
     context_tokens: int = 128_000
     local: bool = False
+    #: Not a model: a deterministic stand-in used by tests and nothing else.
+    stub: bool = False
 
     def supports(self, job: Job) -> bool:
         return job in self.jobs

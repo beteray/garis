@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Callable, Sequence
+from dataclasses import replace
 from typing import Any
 
 from ...errors import ProviderError
@@ -34,7 +35,7 @@ SPEC = ModelSpec(
     jobs=ALL_JOBS,
     capabilities=frozenset({Capability.TOOLS, Capability.JSON_MODE, Capability.STREAMING,
                             Capability.LOCAL}),
-    quality=0.3, speed=1.0, input_cost=0.0, output_cost=0.0, local=True,
+    quality=0.3, speed=1.0, input_cost=0.0, output_cost=0.0, local=True, stub=True,
 )
 
 Reply = str | Completion | Callable[[Sequence[Message]], str | Completion]
@@ -51,6 +52,7 @@ class FakeProvider:
         fail_with: str = "symulowana awaria dostawcy",
         spec: ModelSpec = SPEC,
         loop_last: bool = True,
+        stub: bool = True,
     ) -> None:
         if replies is None:
             queue: list[Reply] = []
@@ -64,6 +66,11 @@ class FakeProvider:
         self._fail_with = fail_with
         self._spec = spec
         self._loop_last = loop_last
+        # Marks every reply as a stand-in, which the verifier refuses to treat as
+        # a judgement. A test that is deliberately standing in for a *real*
+        # provider — "the second vendor answered after the first went down" —
+        # passes stub=False and gets a completion that counts.
+        self._stub = stub
         self.calls: list[list[Message]] = []
         self.tool_payloads: list[Sequence[dict[str, Any]]] = []
 
@@ -95,12 +102,15 @@ class FakeProvider:
         if callable(reply):
             reply = reply(messages)
         if isinstance(reply, Completion):
-            return reply
+            # Even a hand-built completion from a test is a stand-in: whatever it
+            # says, nothing downstream may treat it as a model's judgement.
+            return replace(reply, stub=self._stub)
         return Completion(
             text=reply,
             model=self._spec.name,
             provider=self.name,
             usage=Usage(input_tokens=_rough_tokens(messages), output_tokens=len(reply) // 4),
+            stub=self._stub,
         )
 
     async def stream(

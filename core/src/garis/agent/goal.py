@@ -74,6 +74,11 @@ class Plan:
     question: str = ""               # set only when genuinely blocked
     assumptions: tuple[str, ...] = ()
     notes: str = ""
+    #: Who wrote this plan: "model" or "reflex" (agent/reflex.py, no model
+    #: involved). The verifier needs to know, because a reflex plan can be
+    #: checked against the tool's own structured output while a model plan
+    #: cannot.
+    origin: str = "model"
 
     @property
     def blocked(self) -> bool:
@@ -86,6 +91,7 @@ class Plan:
             "question": self.question,
             "assumptions": list(self.assumptions),
             "notes": self.notes,
+            "origin": self.origin,
         }
 
     @classmethod
@@ -99,6 +105,11 @@ class Plan:
             question=str(data.get("question") or ""),
             assumptions=tuple(str(a) for a in (data.get("assumptions") or [])),
             notes=str(data.get("notes") or ""),
+            # A plan parsed from a model's JSON is a model's plan, whatever the
+            # JSON claims: this field is ours, not the model's, and letting a
+            # completion set it to "reflex" would let it buy the deterministic
+            # verifier's trust.
+            origin="model",
         )
 
     def rekey(self) -> Plan:
