@@ -309,6 +309,14 @@ select {
   color: var(--ink-faint);
 }
 
+/* The stage is a landing place, not a control: it only ever holds focus because
+ * the screen under the pointer went away. The ring stays — removing it would
+ * hide where focus went — but it is drawn inside the panel rather than around
+ * the whole window, where it read as an error state. */
+.shell__stage:focus-visible {
+  outline-offset: -4px;
+}
+
 /* Keyboard users must always see where they are. Defined once, here. */
 :focus-visible {
   outline: 2px solid var(--accent);

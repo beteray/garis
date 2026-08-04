@@ -424,7 +424,13 @@ export const SCENARIOS: Record<string, Scenario> = {
 
   "provider-key": {
     note: "Wpisywanie klucza dostawcy",
-    state: { engine: engine(), view: "settings", secrets: [] },
+    // No providers and no secrets: the picture is of a fresh install being set
+    // up, not of a configured one with its key mysteriously missing.
+    state: {
+      engine: engine({ models: { ...engine().models, providers: [] } }),
+      view: "settings",
+      secrets: [],
+    },
     // The card shows its field straight away when there is no key stored, so
     // reaching the category is the whole interaction.
     act: [{ text: "Modele" }],

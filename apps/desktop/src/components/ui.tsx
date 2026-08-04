@@ -3,7 +3,17 @@
 import { AnimatePresence, motion, useMotionValue, useSpring } from "framer-motion";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { AMBIENT, COUNTER, EASE, LOOP, TWEEN, pressable, variants } from "../lib/motion";
+import { useDocumentVisible } from "../lib/useDocumentVisible";
+import {
+  AMBIENT,
+  COUNTER,
+  EASE,
+  LOOP,
+  TWEEN,
+  pressable,
+  prefersReducedMotion,
+  variants,
+} from "../lib/motion";
 
 /**
  * A glass surface that reacts to the pointer.
@@ -91,11 +101,16 @@ export function Empty({
   title: string;
   hint?: string;
 }) {
+  // Two reasons to hold still, and either is enough: the person asked for calm,
+  // or nobody is looking at the window.
+  const visible = useDocumentVisible();
+  const still = prefersReducedMotion() || !visible;
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={TWEEN.content}
+      variants={variants("card")}
+      initial="hidden"
+      animate="visible"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -108,8 +123,11 @@ export function Empty({
     >
       <motion.div
         aria-hidden
-        animate={{ y: [0, -6, 0], opacity: [0.5, 0.75, 0.5] }}
-        transition={{ duration: AMBIENT.sheen, ...LOOP }}
+        // The one ornament that loops on an otherwise empty screen — and it
+        // stops entirely when the person asked for calm, rather than looping
+        // more slowly at them.
+        animate={still ? { y: 0, opacity: 0.6 } : { y: [0, -6, 0], opacity: [0.5, 0.75, 0.5] }}
+        transition={still ? TWEEN.content : { duration: AMBIENT.sheen, ...LOOP }}
         style={{ fontSize: 34 }}
       >
         {icon}

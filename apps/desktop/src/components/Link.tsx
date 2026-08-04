@@ -11,6 +11,7 @@ import { useState } from "react";
 import type { Link } from "../lib/api";
 import { inTauri, restartEngine } from "../lib/api";
 import { AMBIENT, LOOP } from "../lib/motion";
+import { useDocumentVisible } from "../lib/useDocumentVisible";
 
 /** One line, one dot, one truth about whether the agent is reachable. */
 const LINK_WORDS: Record<Link["state"], { word: string; tone: string }> = {
@@ -33,7 +34,12 @@ export function LinkPill({
   onRetry: () => void;
 }) {
   const { word, tone } = LINK_WORDS[link.state];
-  const live = link.state === "connected";
+  // A dot pulsing in a minimised window costs frames and tells nobody anything.
+  // The hook is called unconditionally — short-circuiting it behind the link
+  // state would be a conditional hook, and React would lose the state entirely
+  // the first time the connection dropped.
+  const visible = useDocumentVisible();
+  const live = link.state === "connected" && visible;
   return (
     <button
       onClick={onRetry}

@@ -142,11 +142,16 @@ export default function App() {
     if (!destinations.some((destination) => destination.id === view)) setView("home");
   }, [destinations, view, setView]);
 
-  // A route change replaces everything inside the stage, so whatever had focus
-  // is gone with it and focus falls back to <body> — where the next Tab starts
-  // from the top of the window rather than from the screen the person just
-  // opened. Moving it to the stage keeps the keyboard where the eye is, and the
-  // stage carries the route's name so a screen reader says where that is.
+  // A route change can take the focused element with it — a button on the screen
+  // that just left — and focus then falls back to <body>, where the next Tab
+  // starts from the top of the window instead of from the screen the person is
+  // looking at. When that happens, the stage takes it: it carries the route's
+  // name, so a screen reader says where they now are.
+  //
+  // Only when it was actually lost. Someone who clicked a navigation item still
+  // has focus on that item, and stealing it would move the keyboard away from
+  // the list they are moving through — and light up a ring around the whole
+  // window for a pointer user who asked for none of this.
   const stage = useRef<HTMLElement | null>(null);
   const first = useRef(true);
   useEffect(() => {
@@ -154,7 +159,8 @@ export default function App() {
       first.current = false;
       return;
     }
-    stage.current?.focus();
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (lost) stage.current?.focus();
   }, [view]);
 
   const state = useMemo(

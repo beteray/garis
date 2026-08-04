@@ -19,6 +19,7 @@ import App from "./App";
 import { Composer } from "./components/Composer";
 import { SettingsView } from "./components/Settings";
 import { TaskCard } from "./components/TaskCard";
+import { useStore } from "./lib/store";
 import { engine, given, task } from "./test/fixtures";
 // The stylesheets as text: jsdom does not apply a linked stylesheet, so the
 // rules are read rather than computed. Vite hands them over with `?raw`.
@@ -110,19 +111,31 @@ describe("the keyboard reaches everything, and nothing it should not", () => {
 });
 
 describe("a route change", () => {
-  it("does not leave focus on nothing", async () => {
+  it("leaves focus on the navigation item that caused it", async () => {
     given({ engine: engine() });
     render(<App />);
 
-    // The stage is what replaced the old screen, so it is where focus belongs:
-    // on <body>, the next Tab would start again from the window's first control.
     const tasks = await screen.findByRole("button", { name: /Zadania/ });
     await userEvent.click(tasks);
 
-    await waitFor(() => {
-      const main = document.querySelector("main.shell__stage");
-      expect(document.activeElement).toBe(main);
-    });
+    // Stealing focus here would move the keyboard away from the list the person
+    // is walking through, and put a ring around the whole window for a pointer
+    // user who asked for none of it.
+    await waitFor(() => expect(tasks).toHaveFocus());
+  });
+
+  it("catches focus when the screen it was on goes away", async () => {
+    given({ engine: engine() });
+    render(<App />);
+    await screen.findByRole("button", { name: /Zadania/ });
+
+    // What a control being removed by the route change looks like from here.
+    (document.activeElement as HTMLElement | null)?.blur();
+    useStore.getState().setView("memory");
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(document.querySelector("main.shell__stage")),
+    );
   });
 
   it("names the screen that arrived", async () => {
