@@ -146,8 +146,10 @@ async def test_a_key_written_to_the_vault_reaches_the_router(vault, bus) -> None
     pool = ProviderPool(router, config, vault=vault, http=http, bus=bus, monitor=monitor)
 
     await pool.rebuild(reason="start")
-    # No key yet: the built-in fallback keeps GARIS alive, Gemini is simply absent.
-    assert router.available_providers() == ["fake"]
+    # No key, no provider. There used to be a stub here "to keep GARIS alive",
+    # and what it kept alive was a planner that guessed and a verifier that said
+    # yes to everything.
+    assert router.available_providers() == []
 
     vault.set("gemini_api_key", "test-key")
     await pool.rebuild(reason="vault")
@@ -256,7 +258,7 @@ async def test_a_task_submitted_after_saving_a_key_finishes_on_that_provider(gar
     await server._store_secret(
         _request({"name": "gemini_api_key", "value": "test-key"})
     )
-    task = await garis.do("sprawdź, ile miejsca zostało na dysku", timeout=30)
+    task = await garis.do("przejrzyj usługi systemowe i podsumuj stan", timeout=30)
 
     assert task.state is TaskState.FINISHED, task.error
     assert any(":generateContent" in call.url for call in transport.calls), \

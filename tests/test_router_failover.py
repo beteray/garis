@@ -322,7 +322,10 @@ async def test_a_whole_task_completes_on_the_second_provider_when_the_first_is_d
 
     assert {"openai", "gemini"} <= {p.name for p in garis.router.providers}
 
-    task = await garis.do("sprawdź, ile miejsca zostało na dysku", timeout=30)
+    # Deliberately not a disk/memory/system question: those are answered by
+    # agent/reflex.py without any provider at all, so they would prove nothing
+    # about failover between two vendors.
+    task = await garis.do("przejrzyj usługi systemowe i podsumuj stan", timeout=30)
 
     assert task.state is TaskState.FINISHED, task.error
     urls = [call.url for call in transport.calls]
@@ -351,12 +354,12 @@ async def test_the_provider_that_failed_mid_task_is_marked_and_skipped_afterward
     garis.http._transport = transport
     await garis.providers.rebuild(reason="test")
 
-    first = await garis.do("sprawdź, ile miejsca zostało na dysku", timeout=30)
+    first = await garis.do("przejrzyj usługi systemowe i podsumuj stan", timeout=30)
     assert first.state is TaskState.FINISHED
     assert garis.providers.monitor.status("openai").status is ProviderStatus.OFFLINE
 
     openai_calls = sum(1 for c in transport.calls if "chat/completions" in c.url)
-    second = await garis.do("sprawdź, ile miejsca zostało na dysku", timeout=30)
+    second = await garis.do("przejrzyj usługi systemowe i podsumuj stan", timeout=30)
 
     assert second.state is TaskState.FINISHED
     assert sum(1 for c in transport.calls if "chat/completions" in c.url) == openai_calls, \

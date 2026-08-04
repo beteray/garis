@@ -25,7 +25,8 @@ def build_supervisor(
     db: Database,
     plans: str | list[str],
 ) -> tuple[TaskSupervisor, TaskStore, FakeProvider]:
-    provider = FakeProvider(role_aware(plans))
+    # Stands in for a real provider — see the note in tests/test_agent.py.
+    provider = FakeProvider(role_aware(plans), stub=False)
     router = ModelRouter([provider], ModelsConfig(), bus=bus)
     planner = Planner(router, runtime.registry, memory=runtime.memory, language="pl")
     store = TaskStore(db)
@@ -46,7 +47,9 @@ async def test_task_reaches_finished(runtime, bus, config, db) -> None:
     done = await supervisor.wait(task.id, timeout=10)
 
     assert done.state is TaskState.FINISHED
-    assert done.report and done.report["verified"]
+    # The step ran and returned; nothing declared a criterion, so nothing checked
+    # the outcome. Finished, honestly unverified.
+    assert done.report and done.report["verified"] is False
     assert store.steps_for(task.id)[0].state.value == "done"
 
 

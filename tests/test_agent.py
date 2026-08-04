@@ -22,7 +22,10 @@ def build_loop(
     *,
     verification: str = VERIFIED,
 ) -> tuple[AgentLoop, FakeProvider]:
-    provider = FakeProvider(role_aware(plans, verification=verification))
+    # stub=False: this double stands in for a *real* provider. The verifier
+    # refuses a verdict from a stub, which is the whole point of the flag — a
+    # canned "ok" must never certify anything in production.
+    provider = FakeProvider(role_aware(plans, verification=verification), stub=False)
     router = ModelRouter([provider], ModelsConfig(), bus=bus)
     planner = Planner(router, runtime.registry, memory=runtime.memory, language="pl")
     verifier = Verifier(router, language="pl")
@@ -202,7 +205,11 @@ async def test_no_criteria_and_no_failures_skips_the_model_check(
     )
     outcome = await loop.run(Goal("po prostu zajrzyj"), task_id="t")
     assert outcome.state is AgentState.DONE
-    assert outcome.verification.checked_by == "rules"
+    # Nothing was declared to check and nothing failed: the step ran, and that is
+    # all anyone knows. "Finished" is true; "verified" would not be.
+    assert outcome.verification.checked_by == "none"
+    assert not outcome.report.verified
+    assert "nie sprawdzałem" in outcome.report.short.lower()
     assert len(provider.calls) == 1, "weryfikacja nie powinna kosztować drugiego wywołania"
 
 
@@ -245,7 +252,9 @@ async def test_policy_denial_is_explained_plainly(runtime: Runtime, bus, config,
     assert "zabezpieczeń" in outcome.report.short
 
 
-async def test_no_model_available_is_a_clean_failure(runtime: Runtime, bus, config) -> None:
+async def test_no_model_available_blocks_instead_of_pretending(
+    runtime: Runtime, bus, config
+) -> None:
     from garis.agent import Planner, Verifier
 
     empty = ModelRouter([], ModelsConfig())
@@ -257,8 +266,12 @@ async def test_no_model_available_is_a_clean_failure(runtime: Runtime, bus, conf
         config=config,
     )
     outcome = await loop.run(Goal("cokolwiek"), task_id="t")
-    assert outcome.state is AgentState.FAILED
+    # Blocked, not failed: nothing was attempted, and the thing that is missing
+    # is one the user can supply. "Failed" would claim an attempt.
+    assert outcome.state is AgentState.BLOCKED
+    assert outcome.resumable
     assert "model" in outcome.report.short.lower()
+    assert not outcome.report.verified
 
 
 # ---------------------------------------------------------------- observability

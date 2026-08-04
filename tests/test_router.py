@@ -201,8 +201,10 @@ def test_providers_without_a_key_are_not_built(home) -> None:
         "anthropic": ProviderConfig(key_ref="vault://anthropic_api_key"),
     }
     providers = build_providers(config, vault=None)
-    # No vault, no keys: nothing usable, so the fake provider keeps GARIS alive.
-    assert [p.name for p in providers] == ["fake"]
+    # No vault, no keys, no providers — not even a stub. A stub here is a model
+    # that always answers, which is worse than no model at all: it plans by
+    # keyword and certifies its own work.
+    assert [p.name for p in providers] == []
 
 
 def test_configured_key_produces_a_live_provider(vault) -> None:
