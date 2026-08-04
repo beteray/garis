@@ -52,6 +52,11 @@ class Reflex:
     #: The answer, built from measured values.
     present: Callable[[Any], str]
     params: dict[str, Any] = field(default_factory=dict)
+    #: Parameters read out of the sentence itself, for the one case where a
+    #: fixed set will not do: "czy Discord działa" names the program. Returning
+    #: None means the phrase did not actually contain what this reflex needs, so
+    #: there is no reflex after all — better than guessing a name.
+    params_from: Callable[[str], dict[str, Any] | None] | None = None
 
     def matches(self, words: set[str]) -> bool:
         return all(group & words for group in self.needs)
@@ -198,6 +203,79 @@ def _present_memory(value: Any) -> str:
     return f"Wolnej pamięci: {_gib(available)} z {_gib(total)} — zajęte {percent:.0f}%."
 
 
+# ------------------------------------------------------------------ processes
+
+
+def _validate_processes(value: Any) -> str:
+    if not isinstance(value, dict):
+        return "narzędzie nie zwróciło danych o procesach"
+    scanned = _number(value.get("scanned"))
+    if scanned is None:
+        return "brak informacji, ile procesów przejrzano"
+    # No machine has no processes. Zero means the reading failed, and a failed
+    # reading must never be presented as "nothing is running".
+    if scanned < 1:
+        return "nie udało się odczytać listy procesów"
+    return ""
+
+
+def _present_processes(value: Any) -> str:
+    assert isinstance(value, dict)
+    scanned = int(_number(value.get("scanned")) or 0)
+    rows = value.get("matched") or []
+    query = str(value.get("query") or "").strip()
+
+    if not query:
+        sentence = f"Działa {scanned} {_processes_word(scanned)}."
+        heaviest = max(
+            (r for r in rows if isinstance(r, dict)),
+            key=lambda r: _number(r.get("memory_mb")) or 0.0,
+            default=None,
+        )
+        if heaviest:
+            memory = _number(heaviest.get("memory_mb")) or 0.0
+            name = str(heaviest.get("name") or "?")
+            sentence += f" Najwięcej pamięci zajmuje {name}"
+            sentence += f" — {memory:.0f} MB." if memory >= 1 else "."
+        return sentence
+
+    count = int(_number(value.get("match_count")) or 0)
+    if not count:
+        return (
+            f"Nie widzę procesu „{query}”. Przejrzałem {scanned} "
+            f"{_processes_word(scanned)}."
+        )
+    pids = ", ".join(str(int(_number(r.get("pid")) or 0)) for r in rows[:3]
+                     if isinstance(r, dict))
+    plural = "proces" if count == 1 else ("procesy" if 2 <= count <= 4 else "procesów")
+    return f"Tak, „{query}” działa — {count} {plural} (PID: {pids})."
+
+
+def _processes_word(count: int) -> str:
+    if count == 1:
+        return "proces"
+    if 2 <= count % 10 <= 4 and count % 100 not in range(12, 15):
+        return "procesy"
+    return "procesów"
+
+
+def _named_process(text: str) -> dict[str, Any] | None:
+    """The program someone asked about, taken from their own words.
+
+    Only the shapes that actually name something — "czy X działa", "czy X jest
+    uruchomiony". A sentence that names nothing gets no reflex, because the
+    alternative is inventing a process name and then reporting on it.
+    """
+    words = fold(text).split()
+    for marker in ("czy", "is"):
+        if marker in words:
+            after = words[words.index(marker) + 1:]
+            name = [w for w in after if w not in _RUNNING and w not in _NOISE]
+            if name:
+                return {"name": name[0]}
+    return None
+
+
 # ------------------------------------------------------------------ the system
 
 
@@ -257,6 +335,18 @@ _SYSTEM = frozenset({"system", "systemu", "windows", "os", "wersja", "wersje",
 _WHAT = frozenset({"jaki", "jaka", "jakie", "ktory", "ktora", "co", "what",
                    "informacje", "info", "which", "version"})
 _TIME = frozenset({"godzina", "godzine", "czas", "time", "clock", "zegar"})
+_PROCESSES = frozenset({"procesy", "proces", "procesow", "programy", "program",
+                        "aplikacje", "processes", "apps", "tasks"})
+_SHOW = frozenset({"pokaz", "wypisz", "lista", "liste", "wylistuj", "jakie",
+                   "uruchomione", "dzialajace", "show", "list", "running"})
+_RUNNING = frozenset({"dziala", "uruchomiony", "uruchomiona", "uruchomione",
+                      "wlaczony", "wlaczona", "running", "open", "otwarty"})
+#: Words that are not a program name, however grammatical they look. "czy to
+#: jest uruchomione" names nothing, and `to` must not become a process query.
+_NOISE = frozenset({"jest", "sa", "teraz", "jeszcze", "czy", "is", "the", "u",
+                    "mnie", "na", "komputerze", "moim", "to", "tam", "cos",
+                    "jakis", "gdzies", "it", "that", "this", "still", "already"})
+_IS_IT = frozenset({"czy", "is"})
 _NOW = frozenset({"teraz", "jest", "obecnie", "now", "current", "aktualnie"})
 
 REFLEXES: tuple[Reflex, ...] = (
@@ -275,6 +365,25 @@ REFLEXES: tuple[Reflex, ...] = (
         needs=(_MEMORY, _QUANTITY),
         validate=_validate_memory,
         present=_present_memory,
+    ),
+    Reflex(
+        # Before the general one: "czy Discord działa" also contains "dziala",
+        # and the two must not race.
+        name="process-named",
+        tool="process_find",
+        purpose="Sprawdzenie, czy dany program działa",
+        needs=(_IS_IT, _RUNNING),
+        validate=_validate_processes,
+        present=_present_processes,
+        params_from=_named_process,
+    ),
+    Reflex(
+        name="process-list",
+        tool="process_find",
+        purpose="Odczyt listy działających procesów",
+        needs=(_PROCESSES, _SHOW),
+        validate=_validate_processes,
+        present=_present_processes,
     ),
     Reflex(
         name="system-info",
@@ -323,18 +432,29 @@ def plan_for(goal: Goal | str, *, available: Callable[[str], bool] | None = None
     than imported, because the agent layer must not reach into the registry to
     ask a question the caller already knows the answer to.
     """
+    text = goal.text if isinstance(goal, Goal) else goal
     reflex = find(goal)
     if reflex is None:
         return None
     if available is not None and not available(reflex.tool):
         return None
+
+    params = dict(reflex.params)
+    if reflex.params_from is not None:
+        derived = reflex.params_from(text)
+        if derived is None:
+            # The phrase matched the shape but named nothing this reflex can act
+            # on. Hand it to the planner rather than guessing a parameter.
+            return None
+        params.update(derived)
+
     return Plan(
         summary=reflex.purpose,
         steps=[
             PlanStep(
                 key=reflex.name,
                 tool=reflex.tool,
-                params=dict(reflex.params),
+                params=params,
                 purpose=reflex.purpose,
                 expects="zmierzone wartości",
             )

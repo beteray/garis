@@ -260,3 +260,54 @@ async def test_asking_for_a_process_that_is_running_finds_it() -> None:
     performed = await REGISTRY.perform("windows.process.list", {"name": "python"})
     assert performed.outcome.evidence["found"] is True
     assert is_running(performed.outcome.value, "python")
+
+
+# ------------------------------------------------------- asking about a program
+
+
+async def test_the_process_reflexes_reach_a_real_reading(runtime) -> None:
+    """The two phrases a person actually types, answered without a model."""
+    from garis.agent import reflex
+    from garis.tools import system
+
+    system.register(runtime.registry)
+
+    listing = reflex.plan_for("pokaż uruchomione procesy")
+    assert listing is not None and listing.steps[0].tool == "process_find"
+    assert listing.steps[0].params == {}
+
+    named = reflex.plan_for("czy Discord jest uruchomiony")
+    assert named is not None and named.steps[0].params == {"name": "discord"}
+
+
+def test_a_question_that_names_no_program_gets_no_reflex() -> None:
+    """Guessing which program someone meant is worse than handing it on."""
+    from garis.agent import reflex
+
+    assert reflex.plan_for("czy działa") is None
+    assert reflex.plan_for("czy to jest uruchomione") is None
+
+
+def test_a_failed_process_reading_is_not_an_empty_desktop() -> None:
+    """Zero processes means the reading failed. No machine has none."""
+    from garis.agent import reflex
+
+    assert reflex.check("process_find", {"scanned": 0, "matched": []})
+    assert reflex.answer("process_find", {"scanned": 0, "matched": []}) == ""
+
+
+def test_a_program_is_only_reported_as_running_when_it_was_seen() -> None:
+    from garis.agent import reflex
+
+    absent = {"query": "discord", "scanned": 214, "matched": [], "match_count": 0,
+              "found": False}
+    assert reflex.check("process_find", absent) == ""
+    sentence = reflex.answer("process_find", absent)
+    assert "Nie widzę" in sentence and "214" in sentence
+
+    present = {"query": "discord", "scanned": 214, "match_count": 2,
+               "matched": [{"pid": 4120, "name": "Discord.exe", "memory_mb": 210.0},
+                           {"pid": 4188, "name": "Discord.exe", "memory_mb": 88.0}],
+               "found": True}
+    answer = reflex.answer("process_find", present)
+    assert "działa" in answer and "4120" in answer and "2 procesy" in answer

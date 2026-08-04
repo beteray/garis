@@ -120,6 +120,34 @@ def register(registry: ToolRegistry) -> None:
         return rows[:limit]
 
     @registry.tool(
+        "process_find",
+        "Sprawdza, czy dany program działa, i podaje ile procesów przejrzano.",
+        params={"name": ParamSpec("string", "Fragment nazwy procesu", default="")},
+        effects=[Effect.READ],
+        category="system",
+    )
+    async def process_find(ctx: ToolContext, name: str = "") -> dict[str, Any]:
+        """Structured, because "is Discord running" needs more than a list.
+
+        An empty list answers two different questions — "that program is not
+        running" and "I could not read the process table" — and a caller cannot
+        tell them apart. `scanned` separates them: no machine has zero processes,
+        so a scan of zero is a failed reading, and only a scan that found
+        something licenses "nie widzę tego programu".
+        """
+        rows = await asyncio.to_thread(_processes)
+        needle = name.strip().lower()
+        matched = [r for r in rows if needle in str(r.get("name", "")).lower()] if needle \
+            else list(rows)
+        return {
+            "query": needle,
+            "scanned": len(rows),
+            "matched": matched[:200],
+            "match_count": len(matched),
+            "found": bool(matched) if needle else None,
+        }
+
+    @registry.tool(
         "process_kill",
         "Zamyka proces o podanym PID albo nazwie.",
         params={
