@@ -28,7 +28,7 @@
 
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { readFile, readdir, mkdir, rm } from "node:fs/promises";
+import { readdir, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -105,14 +105,24 @@ async function devServer(port, origin) {
 async function main() {
   const only = process.argv.slice(2);
 
-  // The scenario table is the source of truth for what gets photographed, so a
-  // new state cannot be added without a picture of it. Only the table itself:
-  // the `EngineState` helper above it has top-level keys of its own, and a
-  // photograph of "notifications" would be a photograph of nothing.
-  const source = await readFile(join(here, "src/dev/scenarios.ts"), "utf8");
-  const table = source.slice(source.indexOf("export const SCENARIOS"));
-  const names = [...table.matchAll(/^ {2}"?([a-z][a-z-]*)"?: \{$/gm)].map((match) => match[1]);
-  const scenarios = only.length ? names.filter((name) => only.includes(name)) : names;
+  const port = await freePort();
+  const ORIGIN = `http://127.0.0.1:${port}`;
+  const server = await devServer(port, ORIGIN);
+  const browser = await chromium.launch({ executablePath: process.env.GARIS_CHROMIUM || undefined });
+
+  // The table comes from the running page — the same table the window renders
+  // from. Nothing can be photographed under a name the app does not know, and
+  // a scenario's extra captures cannot drift onto its neighbour, which is what
+  // the source-parsing version did.
+  const boot = await browser.newPage();
+  await boot.goto(ORIGIN, { waitUntil: "networkidle" });
+  const table = await boot.evaluate(() => window.__garisFixtures ?? null);
+  await boot.close();
+  if (!table) throw new Error("fikstury nie są włączone — brak window.__garisFixtures");
+
+  const scenarios = only.length
+    ? Object.keys(table).filter((name) => only.includes(name))
+    : Object.keys(table);
   if (!scenarios.length) throw new Error(`brak scenariuszy: ${only.join(", ")}`);
 
   // Only what is about to be retaken. A run for one scenario used to empty the
@@ -124,10 +134,6 @@ async function main() {
     }
   }
 
-  const port = await freePort();
-  const ORIGIN = `http://127.0.0.1:${port}`;
-  const server = await devServer(port, ORIGIN);
-  const browser = await chromium.launch({ executablePath: process.env.GARIS_CHROMIUM || undefined });
   let count = 0;
 
   const shoot = async (scenario, viewport, look) => {
@@ -142,15 +148,34 @@ async function main() {
       route.request().url().startsWith(ORIGIN) ? route.continue() : route.abort(),
     );
     await page.goto(`${ORIGIN}/?fixture=${scenario}`, { waitUntil: "networkidle" });
+
+    // The scenario's own steps, run against the real interface: a confirmation
+    // dialog and a focus ring exist only after someone does something.
+    const steps = table[scenario].act ?? [];
+    for (const act of steps) {
+      if (act.text) {
+        await page.getByText(act.text, { exact: true }).first().click();
+      } else if (act.click) {
+        await page.locator(act.click).first().click();
+      } else if (act.press) {
+        for (let n = 0; n < (act.times ?? 1); n += 1) await page.keyboard.press(act.press);
+      }
+      await page.waitForTimeout(220);
+    }
+    // The look is stamped after the interaction, not before: the app re-applies
+    // its own appearance whenever the engine state lands, and an earlier stamp
+    // was quietly overwritten — which is how a "high contrast" picture came out
+    // in ordinary contrast.
     await page.evaluate(
-      ([theme, contrast, motion]) => {
-        const root = document.documentElement;
-        root.dataset.theme = theme;
-        if (contrast) root.dataset.contrast = contrast;
-        if (motion) root.dataset.motion = motion;
-      },
+      ([theme, contrast, motion]) =>
+        window.__garisLook?.({
+          theme,
+          high_contrast: contrast === "high",
+          animation: motion === "off" ? "off" : "system",
+        }),
       [look.theme, look.contrast ?? "", look.motion ?? ""],
     );
+
     // Long enough for the entry animations to settle. The orb never settles, by
     // design, so its phase differs between runs — that is not a regression.
     await page.waitForTimeout(1400);
@@ -164,8 +189,18 @@ async function main() {
   const base = VIEWPORTS.find((viewport) => viewport.name === BASE.viewport);
   const baseLook = LOOKS.find((look) => look.name === BASE.look);
 
+  const viewportBy = (name) => VIEWPORTS.find((viewport) => viewport.name === name);
+  const lookBy = (name) => LOOKS.find((look) => look.name === name);
+
   try {
-    for (const scenario of scenarios) await shoot(scenario, base, baseLook);
+    for (const scenario of scenarios) {
+      await shoot(scenario, base, baseLook);
+      for (const extra of table[scenario].extra ?? []) {
+        const viewport = viewportBy(extra.viewport);
+        const look = lookBy(extra.look);
+        if (viewport && look) await shoot(scenario, viewport, look);
+      }
+    }
     if (scenarios.includes(SWEEP)) {
       for (const viewport of VIEWPORTS) {
         if (viewport.name !== base.name) await shoot(SWEEP, viewport, baseLook);

@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import type { Memory } from "../lib/api";
 import { stagger, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
+import { Confirm, useOrigin } from "./Dialog";
 import { AnimatedNumber, Empty, Glass, Pill, Section, relativeTime } from "./ui";
 
 /** Every kind `garis.memory.MemoryKind` defines, in the user's words. Missing
@@ -56,6 +57,17 @@ function MemoryCard({ memory }: { memory: Memory }) {
   const developer = useStore((s) => s.engine?.dev.developer_mode ?? false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Forgetting is not undoable. It gets asked about first, and the question
+  // grows out of the button that raised it.
+  const [asking, setAsking] = useState(false);
+  const { origin, remember } = useOrigin();
+
+  const forget = async () => {
+    setAsking(false);
+    if (!api) return;
+    await api.forget(memory.id);
+    await refreshMemories();
+  };
 
   const save = async () => {
     if (!api) return;
@@ -124,10 +136,10 @@ function MemoryCard({ memory }: { memory: Memory }) {
               </button>
               <button
                 className="btn btn--quiet tiny"
-                onClick={async () => {
-                  if (!api) return;
-                  await api.forget(memory.id);
-                  await refreshMemories();
+                aria-haspopup="dialog"
+                onClick={(event) => {
+                  remember(event);
+                  setAsking(true);
                 }}
               >
                 Zapomnij
@@ -136,6 +148,17 @@ function MemoryCard({ memory }: { memory: Memory }) {
           )}
         </div>
       </Glass>
+
+      <Confirm
+        open={asking}
+        origin={origin}
+        danger
+        title="Zapomnieć ten wpis?"
+        description="Nie da się tego cofnąć — zapomnę go na dobre."
+        confirmLabel="Zapomnij"
+        onConfirm={() => void forget()}
+        onCancel={() => setAsking(false)}
+      />
     </motion.div>
   );
 }

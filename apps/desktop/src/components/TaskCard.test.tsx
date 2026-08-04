@@ -175,6 +175,9 @@ describe("the tasks screen", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: /Wymaga Ciebie/ }));
     expect(screen.getByText("czeka")).toBeInTheDocument();
-    expect(screen.queryByText("skończone")).not.toBeInTheDocument();
+    // The filtered-out card animates away rather than blinking out, so it is
+    // briefly still in the document. What matters is that it *goes* — a card
+    // that survives its own exit is the stale-content bug this asserts against.
+    await waitFor(() => expect(screen.queryByText("skończone")).toBeNull());
   });
 });

@@ -105,7 +105,28 @@ export const AMBIENT = {
   waiting: 2.8,
   /** A working orb's internal circulation. */
   working: 2.2,
+  /** Something asking to be noticed: the lock on an approval, a pending badge. */
+  attention: 2.4,
+  /** A live status dot — the connection pill, the presence marker.
+   *
+   *  It used to be 1.6s, written inline where no rule could see it. Naming it
+   *  here put it under the two-second floor for anything that repeats forever,
+   *  and the floor is right: a dot blinking once a second in the corner of a
+   *  window that stays open all day is a window nobody can stop looking at. */
+  dot: 2.4,
+  /** The slow travel of a sheen across a large glass surface. */
+  sheen: 4.5,
+  /** A skeleton's shimmer while real content is on its way. Also raised to the
+   *  floor: a fast shimmer reads as urgency, and waiting is not urgent. */
+  loading: 2.2,
 } as const;
+
+/** The loop every ambient animation shares: forever, and eased at both ends. */
+export const LOOP = { repeat: Infinity, ease: "easeInOut" } as const;
+
+/** A counter travelling to its new value. Softer than SPRING.content: a number
+ *  that overshoots reads as a number that changed twice. */
+export const COUNTER = { stiffness: 140, damping: 20 } as const;
 
 // ------------------------------------------------------------ reduced motion
 
@@ -130,7 +151,9 @@ export const prefersReducedMotion = (): boolean =>
 const STILL: Variants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { duration: DURATION.control } },
-  exit: { opacity: 0, transition: { duration: DURATION.instant } },
+  // `pointerEvents` on the way out for the same reason as the scrim below: a
+  // thing that has finished being visible must stop being clickable first.
+  exit: { opacity: 0, pointerEvents: "none", transition: { duration: DURATION.instant } },
 };
 
 // ---------------------------------------------------------------- the sets
@@ -190,18 +213,29 @@ const card: Variants = {
 /**
  * A dialog taking over. Comes forward rather than up, because it is above the
  * page rather than after it.
+ *
+ * The scale is deliberately shallow. Combined with `transform-origin` set from
+ * the control that opened it (see components/Dialog.tsx) it reads as the dialog
+ * growing out of its opener; a deeper zoom from the centre of the screen is the
+ * generic effect this replaces, and it points at nothing.
  */
 const dialog: Variants = {
-  hidden: { opacity: 0, scale: 0.97, y: 8 },
+  hidden: { opacity: 0, scale: 0.96, y: 6 },
   visible: { opacity: 1, scale: 1, y: 0, transition: SPRING.panel },
-  exit: { opacity: 0, scale: 0.98, y: 4, transition: TWEEN.exit },
+  exit: { opacity: 0, scale: 0.985, y: 3, pointerEvents: "none", transition: TWEEN.exit },
 };
 
-/** The scrim behind a dialog. Opacity only — it covers the whole window. */
+/**
+ * The scrim behind a dialog. Opacity only — it covers the whole window.
+ *
+ * It stops taking clicks the instant it starts leaving. Framer keeps the node
+ * mounted for the length of the exit, and a scrim that is 4% opaque still
+ * swallows the click aimed at whatever is now visible through it.
+ */
 const scrim: Variants = {
   hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: TWEEN.control },
-  exit: { opacity: 0, transition: TWEEN.control },
+  visible: { opacity: 1, pointerEvents: "auto", transition: TWEEN.control },
+  exit: { opacity: 0, pointerEvents: "none", transition: TWEEN.control },
 };
 
 /** A sheet sliding in from the edge: the overlay navigation, approval sheets. */
@@ -239,6 +273,16 @@ export function variants(set: MotionSet): Variants {
  * Capped: past about eight items the stagger stops being elegant and starts
  * being a wait, so long lists get the same small total delay as short ones.
  */
+/**
+ * The delay for item `index` in a hand-rolled sequence, capped so a long list
+ * does not become a wait. For anything that can use `stagger()` below, use that
+ * instead — this is for lists whose children cannot carry variants.
+ */
+export function step(index: number, each = 0.04, cap = 0.3): number {
+  if (prefersReducedMotion()) return 0;
+  return Math.min(index * each, cap);
+}
+
 export function stagger(count = 8): Variants {
   if (prefersReducedMotion()) return { hidden: {}, visible: {} };
   const each = count > 8 ? 0.02 : 0.045;

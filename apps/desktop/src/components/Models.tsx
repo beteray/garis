@@ -15,6 +15,7 @@ import { useState } from "react";
 import type { Provider } from "../lib/api";
 import { TWEEN } from "../lib/motion";
 import { useStore } from "../lib/store";
+import { Confirm, useOrigin } from "./Dialog";
 import { humanSecretName } from "./Memory";
 import { ProviderRow, RecheckButton } from "./Providers";
 import { Glass, Section } from "./ui";
@@ -67,6 +68,9 @@ function ProviderPanel({
   const [phase, setPhase] = useState<Phase>("idle");
   const [value, setValue] = useState("");
   const [failure, setFailure] = useState("");
+  // A key is not recoverable once removed: the vault holds the only copy.
+  const [asking, setAsking] = useState(false);
+  const { origin, remember } = useOrigin();
 
   const provider =
     engine?.models.providers.find((candidate) => candidate.name === engineName) ??
@@ -93,6 +97,7 @@ function ProviderPanel({
   };
 
   const remove = async () => {
+    setAsking(false);
     if (!api) return;
     await api.deleteSecret(secretName);
     await Promise.all([refreshSecrets(), refresh()]);
@@ -141,12 +146,30 @@ function ProviderPanel({
             {stored ? "Zmień klucz" : "Dodaj klucz"}
           </button>
           {stored && (
-            <button className="btn btn--quiet tiny" onClick={() => void remove()}>
+            <button
+              className="btn btn--quiet tiny"
+              aria-haspopup="dialog"
+              onClick={(event) => {
+                remember(event);
+                setAsking(true);
+              }}
+            >
               Usuń klucz
             </button>
           )}
         </div>
       )}
+
+      <Confirm
+        open={asking}
+        origin={origin}
+        danger
+        title={`Usunąć klucz ${label}?`}
+        description="Wymaże go z sejfu. Żeby znów korzystać z tego dostawcy, trzeba będzie wkleić klucz jeszcze raz."
+        confirmLabel="Usuń klucz"
+        onConfirm={() => void remove()}
+        onCancel={() => setAsking(false)}
+      />
 
       {busy && (
         <motion.span

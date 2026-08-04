@@ -7,8 +7,9 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
-import { SPRING, TWEEN, EASE } from "../lib/motion";
+import { useRef, useState } from "react";
+import { SPRING, variants } from "../lib/motion";
+import { useModalKeys } from "./Dialog";
 import { useStore } from "../lib/store";
 import { Presence } from "./Presence";
 import { Glass, Pill } from "./ui";
@@ -24,6 +25,15 @@ interface Step {
   secretName?: string;
 }
 
+/**
+ * First run asks four things, and none of them is a wake word.
+ *
+ * "Powiedz „Garis", a Cię usłyszę" was the third screen, and it was not true:
+ * there is no speech path in the engine, Settings → Głos says so plainly, and
+ * the microphone button is disabled for that reason. Promising it during the
+ * first thirty seconds and denying it in Settings is the kind of contradiction
+ * this release exists to remove.
+ */
 const STEPS: Step[] = [
   {
     id: "name",
@@ -47,14 +57,6 @@ const STEPS: Step[] = [
     ],
   },
   {
-    id: "wake",
-    line: "Powiedz „Garis”, a Cię usłyszę.",
-    hint: "Możesz zmienić to słowo na dowolne inne.",
-    kind: "text",
-    placeholder: "garis",
-    configKey: "voice.wake_word",
-  },
-  {
     id: "key",
     line: "Żebym mógł myśleć, potrzebuję dostępu do modelu.",
     hint: "Klucz trafi do zaszyfrowanego sejfu, nie do pliku konfiguracyjnego. Możesz to zrobić później.",
@@ -75,6 +77,7 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
   const refresh = useStore((s) => s.refresh);
   const [index, setIndex] = useState(0);
   const [value, setValue] = useState("");
+  const panel = useRef<HTMLDivElement | null>(null);
   const step = STEPS[index];
 
   const advance = async (submitted?: string) => {
@@ -108,23 +111,27 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
     onFinish();
   };
 
+  // Modal in the strict sense: there is nothing else to do in the window yet, so
+  // the keyboard stays inside. Escape is deliberately not a way out — leaving is
+  // "Pomiń wszystko", a decision that says what it does, not a keystroke that
+  // silently marks setup finished.
+  useModalKeys({ active: true, panel });
+
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4, ease: EASE }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        display: "grid",
-        placeItems: "center",
-        zIndex: 60,
-        background: "rgba(6, 8, 12, 0.42)",
-        backdropFilter: "blur(24px)",
-      }}
+      className="onboarding"
+      variants={variants("scrim")}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
     >
-      <div style={{ display: "grid", justifyItems: "center", gap: 26 }}>
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pierwsze uruchomienie"
+        style={{ display: "grid", justifyItems: "center", gap: 26 }}
+      >
         <motion.div
           initial={{ scale: 0.7, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -147,10 +154,10 @@ export function Onboarding({ onFinish }: { onFinish: () => void }) {
           <AnimatePresence mode="wait">
             <motion.div
               key={step.id}
-              initial={{ opacity: 0, y: 14, filter: "blur(6px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -14, filter: "blur(6px)" }}
-              transition={TWEEN.content}
+              variants={variants("panel")}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
               style={{ display: "grid", gap: 14 }}
             >
               <div style={{ display: "grid", gap: 6 }}>

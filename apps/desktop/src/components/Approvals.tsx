@@ -10,7 +10,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import type { Approval } from "../lib/api";
-import { SPRING, TWEEN, variants } from "../lib/motion";
+import { AMBIENT, LOOP, SPRING, TWEEN, tactile, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { EffectBadge, Glass } from "./ui";
 
@@ -62,7 +62,7 @@ function Card({ approval }: { approval: Approval }) {
           <motion.span
             aria-hidden
             animate={{ scale: [1, 1.12, 1] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: AMBIENT.attention, ...LOOP }}
             style={{ fontSize: 20 }}
           >
             🔐
@@ -95,18 +95,14 @@ function Card({ approval }: { approval: Approval }) {
               <motion.button
                 className="btn"
                 onClick={() => void answer(false)}
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                transition={TWEEN.control}
+                {...tactile()}
               >
                 Nie
               </motion.button>
               <motion.button
                 className="btn btn--primary"
                 onClick={() => void answer(true)}
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                transition={TWEEN.control}
+                {...tactile()}
                 autoFocus
               >
                 Tak, zrób to
@@ -226,7 +222,7 @@ export function ApprovalBadge({ count }: { count: number }) {
         >
           <motion.span
             animate={{ opacity: [1, 0.55, 1] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: AMBIENT.attention, ...LOOP }}
           >
             {count}
           </motion.span>

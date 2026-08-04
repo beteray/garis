@@ -161,10 +161,37 @@ const CONVERSATION: ChatEntry[] = [
 
 // ---------------------------------------------------------------- scenarios
 
+/**
+ * A step the screenshot runner performs after the page loads, so a surface that
+ * only exists after a click — a confirmation, a provider's key field, a focus
+ * ring — can be photographed. Selectors and key names only: this drives the
+ * real interface, it does not stand in for it.
+ */
+export interface Act {
+  /** Click the first element matching this CSS selector. */
+  click?: string;
+  /** Click the first element whose text matches (used where a class would not
+   *  survive a rename but the words will). */
+  text?: string;
+  /** Press a key, e.g. "Tab". Repeated `times` if given. */
+  press?: string;
+  times?: number;
+}
+
+/** An extra capture of the same scenario at another size or in another look. */
+export interface Shot {
+  viewport: string;
+  look: string;
+}
+
 export interface Scenario {
   /** What a screenshot of this is a picture of. */
   note: string;
   state: Record<string, unknown>;
+  /** Interaction to perform before the picture is taken. */
+  act?: Act[];
+  /** Captures beyond the default size and look. */
+  extra?: Shot[];
   /**
    * What the shell believes about its connection. Absent means "connected" —
    * which is a claim about the *window*, not about a running engine: under a
@@ -374,8 +401,78 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
 
   settings: {
-    note: "Ustawienia — wygląd",
+    note: "Ustawienia — pierwsza kategoria",
     state: { engine: engine(), view: "settings" },
+  },
+
+  "settings-appearance": {
+    note: "Ustawienia — wygląd, po zmianie kategorii",
+    state: { engine: engine(), view: "settings" },
+    act: [{ text: "Wygląd" }],
+  },
+
+  onboarding: {
+    note: "Pierwsze uruchomienie",
+    state: {
+      engine: engine({
+        identity: { name: "", address_as: "", language: "pl", onboarded: false },
+      }),
+      chat: [],
+    },
+    extra: [{ viewport: "1024x700", look: "dark" }],
+  },
+
+  "provider-key": {
+    note: "Wpisywanie klucza dostawcy",
+    state: { engine: engine(), view: "settings", secrets: [] },
+    // The card shows its field straight away when there is no key stored, so
+    // reaching the category is the whole interaction.
+    act: [{ text: "Modele" }],
+  },
+
+  "confirm-forget": {
+    note: "Potwierdzenie przed nieodwracalnym",
+    state: {
+      engine: engine(),
+      view: "memory",
+      memories: [memory()],
+      secrets: [secret()],
+    },
+    act: [{ text: "Zapomnij" }],
+    // The same question in the two looks most likely to break it, and in the
+    // smallest window it has to survive.
+    extra: [
+      { viewport: "1440x900", look: "contrast" },
+      { viewport: "1440x900", look: "still" },
+      { viewport: "1024x700", look: "dark" },
+    ],
+  },
+
+  "approval-sheet": {
+    note: "Prośba o zgodę nad innym ekranem",
+    state: {
+      engine: engine(),
+      view: "settings",
+      tasks: [task({ state: "blocked" })],
+      approvals: [
+        {
+          id: "a1",
+          task_id: "t1",
+          tool: "install_package",
+          prompt: "Zainstalować 7-Zip z repozytorium winget?",
+          effects: ["install", "elevate"],
+          state: "pending",
+          requested_at: now() - 20,
+        } as Approval,
+      ],
+    },
+  },
+
+  "focus-ring": {
+    note: "Widoczny pierścień ostrości — klawiatura",
+    state: { engine: engine(), chat: CONVERSATION },
+    act: [{ press: "Tab", times: 3 }],
+    extra: [{ viewport: "1440x900", look: "contrast" }],
   },
 
   tasks: {

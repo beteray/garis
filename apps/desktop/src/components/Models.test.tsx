@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ModelsSettings } from "./Models";
 import { MemoryView } from "./Memory";
@@ -176,6 +176,14 @@ describe("memory and the vault", () => {
 
     await waitFor(() => expect(screen.getByText("Wolę krótkie odpowiedzi")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Zapomnij" }));
+
+    // Forgetting is asked about first: it cannot be undone, and the button sits
+    // next to "Popraw".
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Nie da się tego cofnąć");
+    expect(forget).not.toHaveBeenCalled();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Zapomnij" }));
     await waitFor(() => expect(forget).toHaveBeenCalledWith("m1"));
   });
 });

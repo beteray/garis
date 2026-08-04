@@ -19,7 +19,7 @@
 import { motion } from "framer-motion";
 import type { RuntimeState } from "../lib/runtimeState";
 import { PRESENTATION } from "../lib/runtimeState";
-import { prefersReducedMotion } from "../lib/motion";
+import { AMBIENT, LOOP, TWEEN, prefersReducedMotion } from "../lib/motion";
 import { useDocumentVisible } from "../lib/useDocumentVisible";
 import { useStore } from "../lib/store";
 import { Orb } from "./Orb";
@@ -58,8 +58,8 @@ export function Presence({ state, size = 10, compact = false }: PresenceProps) {
         animate={animate ? { opacity: [0.45, 1, 0.45], scale: [1, 1.18, 1] } : { opacity: 1, scale: 1 }}
         transition={
           animate
-            ? { duration: 1.6, repeat: Infinity, ease: "easeInOut" }
-            : { duration: 0.2 }
+            ? { duration: AMBIENT.dot, ...LOOP }
+            : TWEEN.control
         }
       />
       {/* The mark carries the state without colour and without motion — it is

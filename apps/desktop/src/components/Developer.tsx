@@ -9,7 +9,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { TWEEN, stagger, variants } from "../lib/motion";
+import { TWEEN, stagger, step, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Glass, Section } from "./ui";
 import { ProviderRow, RecheckButton } from "./Providers";
@@ -111,7 +111,7 @@ export function DeveloperView() {
               key={index}
               initial={{ opacity: 0, x: -6 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ ...TWEEN.content, delay: Math.min(index * 0.012, 0.3) }}
+              transition={{ ...TWEEN.content, delay: step(index, 0.012) }}
               className="mono tiny faint"
             >
               {String(entry.tool)} → {String(entry.outcome)}{" "}

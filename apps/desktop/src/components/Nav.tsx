@@ -12,9 +12,10 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import type { Destination, NavShape, Route } from "../lib/nav";
 import { SPRING, tactile, variants } from "../lib/motion";
+import { useModalKeys } from "./Dialog";
 
 interface NavProps {
   shape: NavShape;
@@ -92,45 +93,10 @@ export function Nav({
   footer,
 }: NavProps) {
   const panel = useRef<HTMLDivElement | null>(null);
-  const opener = useRef<Element | null>(null);
 
-  // Overlay navigation is a dialog: it traps focus, Escape closes it, and focus
-  // goes back where it came from. Anything less strands a keyboard user inside
-  // a menu they cannot leave.
-  useEffect(() => {
-    if (shape !== "overlay" || !open) return;
-    opener.current = document.activeElement;
-    const first = panel.current?.querySelector<HTMLElement>("button");
-    first?.focus();
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose?.();
-        return;
-      }
-      if (event.key !== "Tab" || !panel.current) return;
-      const focusable = panel.current.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusable.length) return;
-      const [head] = focusable;
-      const tail = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === head) {
-        event.preventDefault();
-        tail.focus();
-      } else if (!event.shiftKey && document.activeElement === tail) {
-        event.preventDefault();
-        head.focus();
-      }
-    };
-
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-      (opener.current as HTMLElement | null)?.focus?.();
-    };
-  }, [shape, open, onClose]);
+  // Overlay navigation is a dialog, and uses the same trap as every other one:
+  // focus goes in, Escape closes it, focus comes back out where it started.
+  useModalKeys({ active: shape === "overlay" && open, panel, onClose });
 
   const items = (showLabel: boolean) =>
     destinations.map((destination) => (

@@ -289,7 +289,6 @@ select {
   border-radius: var(--radius-control);
   background: rgba(255, 255, 255, 0.05);
   color: var(--ink);
-  outline: none;
   transition:
     border-color var(--dur-fast) var(--ease-glass),
     background var(--dur-fast) var(--ease-glass),
@@ -601,6 +600,99 @@ p { margin: 0; }
   background: rgba(16, 24, 40, 0.28);
 }
 
+/* First run: the same modal layer idea, full-window, because at this point
+ * there is nothing behind it worth seeing. */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(6, 8, 12, 0.42);
+  backdrop-filter: blur(24px);
+}
+
+:root[data-theme="light"] .onboarding {
+  background: rgba(226, 232, 240, 0.55);
+}
+
+:root[data-contrast="high"] .onboarding {
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: none;
+}
+
+/* ------------------------------------------------------------------ dialogs
+ *
+ * One layer for everything modal, rendered into <body> so no panel can crop it.
+ * The scrim and the panel are siblings: a panel inside its own backdrop
+ * inherits the backdrop's blur, and a dialog you have to squint at is worse
+ * than no blur at all. */
+.dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  /* The layer itself never takes a click; the scrim and the panel do. This is
+   * what keeps a finished exit animation from swallowing the next click. */
+  pointer-events: none;
+}
+
+.dialog__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.44);
+  backdrop-filter: blur(3px);
+}
+
+:root[data-theme="light"] .dialog__scrim {
+  background: rgba(16, 24, 40, 0.3);
+}
+
+/* High contrast drops the blur: translucency over text is exactly what someone
+ * who asked for contrast is asking to be rid of. */
+:root[data-contrast="high"] .dialog__scrim {
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: none;
+}
+
+.dialog {
+  position: relative;
+  pointer-events: auto;
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  /* Belt and braces with the JS: a dialog is not a place to lose the pointer. */
+  box-shadow: var(--shadow-lifted);
+}
+
+.dialog__title {
+  font-size: 17px;
+  margin: 0;
+}
+
+.dialog__description {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.dialog__footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* A question, not a form: narrow measure, and the buttons close to the text. */
+.dialog--confirm .dialog__description {
+  max-width: 46ch;
+}
+
 /* ------------------------------------------------------------------ screens
  *
  * Every screen is a column that scrolls inside itself. The page never scrolls:
@@ -839,6 +931,11 @@ p { margin: 0; }
   display: flex;
   gap: 6px;
   flex-wrap: nowrap;
+  /* Sized by its buttons, not by the message it hangs off. Without this the
+   * toolbar inherits the width of a two-word message and folds three buttons
+   * into a stack of illegible fragments. */
+  width: max-content;
+  max-width: none;
   padding: 2px;
   border-radius: var(--radius-pill);
   background: var(--material-card);
@@ -1290,12 +1387,20 @@ p { margin: 0; }
   flex-wrap: wrap;
 }
 
+/* The textarea has no border of its own, so the ring goes on the surface that
+ * does. Both `outline: none` declarations that used to be here — one on every
+ * .field, one on this textarea — meant a keyboard user could be typing into a
+ * box with nothing to show for it. */
+.composer__field:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .composer__input {
   flex: 1;
   min-width: 140px;
   resize: none;
   border: none;
-  outline: none;
   background: transparent;
   color: var(--ink);
   padding: 9px 8px;

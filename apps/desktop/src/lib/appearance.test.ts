@@ -128,4 +128,14 @@ describe("the whole default look", () => {
     expect(root().dataset.density).toBe("comfortable");
     expect(root().dataset.motion).toBe("full");
   });
+
+  it("takes the translucency off when high contrast is on", () => {
+    // The tokens say --glass-strength: 0 under high contrast, but this function
+    // writes the same variable inline, and inline wins. Whatever the glass
+    // slider says, contrast beats effect.
+    applyAppearance({ high_contrast: true, glass: 1 });
+    expect(root().style.getPropertyValue("--glass-strength")).toBe("0");
+    expect(root().dataset.glass).toBe("off");
+    expect(root().dataset.contrast).toBe("high");
+  });
 });

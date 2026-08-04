@@ -20,7 +20,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { Task, TaskState } from "../lib/api";
 import { outcomeOf } from "../lib/chat";
-import { SPRING } from "../lib/motion";
+import { SPRING, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { relativeTime } from "./ui";
 
@@ -212,6 +212,7 @@ export function TaskCard({
         <button
           className="btn btn--quiet tiny"
           aria-expanded={open}
+          aria-controls={`task-detail-${task.id}`}
           onClick={() => setOpen((value) => !value)}
         >
           {open ? "Zwiń" : "Szczegóły"}
@@ -254,11 +255,16 @@ export function TaskCard({
       <AnimatePresence initial={false}>
         {open && (
           <motion.div
+            id={`task-detail-${task.id}`}
             className="task__details"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={SPRING.panel}
+            // Opacity and a short rise, never height: animating the box model
+            // re-lays-out the whole list on every frame, and a task list is
+            // exactly where that shows up as jitter. The card grows in one step
+            // and the content arrives over it.
+            variants={variants("message")}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
           >
             <Row label="Cel">{task.goal}</Row>
             {task.criteria.length > 0 && (

@@ -12,7 +12,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Link } from "./lib/api";
 import { GarisApi, classify, discover } from "./lib/api";
 import { applyAppearance, watchSystemAppearance } from "./lib/appearance";
@@ -142,6 +142,21 @@ export default function App() {
     if (!destinations.some((destination) => destination.id === view)) setView("home");
   }, [destinations, view, setView]);
 
+  // A route change replaces everything inside the stage, so whatever had focus
+  // is gone with it and focus falls back to <body> — where the next Tab starts
+  // from the top of the window rather than from the screen the person just
+  // opened. Moving it to the stage keeps the keyboard where the eye is, and the
+  // stage carries the route's name so a screen reader says where that is.
+  const stage = useRef<HTMLElement | null>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    stage.current?.focus();
+  }, [view]);
+
   const state = useMemo(
     () =>
       runtimeState({
@@ -218,6 +233,8 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.main
             key={view}
+            ref={stage}
+            tabIndex={-1}
             variants={variants("panel")}
             initial="hidden"
             animate="visible"

@@ -115,7 +115,12 @@ export function applyAppearance(
   root.dataset.contrast = settings.high_contrast ? "high" : "normal";
 
   root.style.setProperty("--accent-hsl", accentTriple(settings.accent));
-  const glass = clamp(settings.glass, 0, 1);
+  // High contrast wins over glass, and it has to win *here*: the strength is an
+  // inline style, and an inline style beats the high-contrast rule in tokens.css
+  // no matter what that rule says. Turning on high contrast used to leave every
+  // surface as translucent as before — the tokens changed and nothing on screen
+  // did, because this line overwrote them a frame later.
+  const glass = settings.high_contrast ? 0 : clamp(settings.glass, 0, 1);
   root.style.setProperty("--glass-strength", glass.toString());
   // At zero, take the backdrop filters off entirely rather than blurring by
   // zero pixels: a no-op filter still costs a compositing pass, and "wyłącz

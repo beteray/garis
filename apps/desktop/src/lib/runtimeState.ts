@@ -76,17 +76,33 @@ export interface RuntimeInputs {
   /** Approvals actually returned by the engine, not a local guess. */
   pendingApprovals: number;
   providers: Provider[];
-  quietHours: { enabled: boolean; start: string; end: string } | null;
+  quietHours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+    /** The engine's own answer, measured on the machine that keeps the clock. */
+    active_now?: boolean;
+  } | null;
   /** Injected so the test can pick a time instead of waiting for one. */
   now?: Date;
 }
 
-/** Is the clock inside the quiet window? Mirrors `QuietHours.contains`. */
+/**
+ * Is the clock inside the quiet window?
+ *
+ * The engine answers this itself and sends `active_now`, so that answer wins:
+ * it is a measured fact from the process that owns the schedule. The local
+ * calculation below is the fallback for an engine too old to send it, and it is
+ * a *mirror* of `QuietHours.contains` — two implementations of one rule, which
+ * is exactly the sort of pair that drifts apart across a timezone or a DST
+ * boundary and leaves the window confidently wrong.
+ */
 export function inQuietHours(
   quiet: RuntimeInputs["quietHours"],
   now: Date = new Date(),
 ): boolean {
   if (!quiet?.enabled) return false;
+  if (typeof quiet.active_now === "boolean") return quiet.active_now;
   const minutes = (value: string) => {
     const [hh, mm] = value.split(":").map(Number);
     return Number.isFinite(hh) && Number.isFinite(mm) ? hh * 60 + mm : null;

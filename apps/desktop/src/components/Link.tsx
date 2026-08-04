@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import type { Link } from "../lib/api";
 import { inTauri, restartEngine } from "../lib/api";
+import { AMBIENT, LOOP } from "../lib/motion";
 
 /** One line, one dot, one truth about whether the agent is reachable. */
 const LINK_WORDS: Record<Link["state"], { word: string; tone: string }> = {
@@ -54,7 +55,7 @@ export function LinkPill({
           opacity: live ? [0.6, 1, 0.6] : 1,
           scale: live ? [1, 1.25, 1] : 1,
         }}
-        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+        transition={{ duration: AMBIENT.attention, ...LOOP }}
         style={{ width: 7, height: 7, borderRadius: "50%", background: `hsl(${tone})`, flexShrink: 0 }}
       />
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

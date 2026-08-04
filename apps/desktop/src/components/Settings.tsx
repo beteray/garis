@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { ACCENTS, DEFAULT_APPEARANCE } from "../lib/appearance";
 import { ModelsSettings } from "./Models";
-import { SPRING, TWEEN, stagger, tactile } from "../lib/motion";
+import { SPRING, TWEEN, tactile, variants } from "../lib/motion";
 import { useStore } from "../lib/store";
 import { Glass, Pill, Section } from "./ui";
 
@@ -235,9 +235,15 @@ export function SettingsView() {
         ))}
       </nav>
 
+      {/* The new category replaces the old one outright — no cross-fade, and
+          deliberately no exit. Two bodies on screen at once would put the
+          previous category's controls in the tab order and in the accessibility
+          tree while they fade, and a switch that is still readable behind its
+          replacement reads as a bug rather than as motion. The arrival is
+          animated; the departure is immediate. */}
       <motion.div
         key={category}
-        variants={stagger()}
+        variants={variants("panel")}
         initial="hidden"
         animate="visible"
         className="settings__body scroll"
@@ -544,6 +550,8 @@ export function SettingsView() {
           </Section>
         )}
 
+      </motion.div>
+
         <div className="settings__status" aria-live="polite">
           {problem ? (
             <span className="tiny" style={{ color: "hsl(var(--state-error))" }}>
@@ -561,7 +569,6 @@ export function SettingsView() {
             </motion.span>
           )}
         </div>
-      </motion.div>
     </div>
   );
 }

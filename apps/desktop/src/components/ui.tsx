@@ -3,7 +3,7 @@
 import { AnimatePresence, motion, useMotionValue, useSpring } from "framer-motion";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { EASE, TWEEN, variants } from "../lib/motion";
+import { AMBIENT, COUNTER, EASE, LOOP, TWEEN, pressable, variants } from "../lib/motion";
 
 /**
  * A glass surface that reacts to the pointer.
@@ -69,7 +69,7 @@ export function AnimatedNumber({
   duration?: number;
 }) {
   const motionValue = useMotionValue(value);
-  const spring = useSpring(motionValue, { stiffness: 140, damping: 20 });
+  const spring = useSpring(motionValue, COUNTER);
   const [shown, setShown] = useState(value);
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export function Empty({
       <motion.div
         aria-hidden
         animate={{ y: [0, -6, 0], opacity: [0.5, 0.75, 0.5] }}
-        transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+        transition={{ duration: AMBIENT.sheen, ...LOOP }}
         style={{ fontSize: 34 }}
       >
         {icon}
@@ -164,7 +164,7 @@ export function Pill({
     <motion.button
       className="btn tiny"
       onClick={onClick}
-      whileTap={{ scale: 0.96 }}
+      {...pressable()}
       transition={TWEEN.control}
       style={{
         padding: "5px 12px",
@@ -240,7 +240,7 @@ export function Typewriter({ text, speed = 14 }: { text: string; speed?: number 
             initial={{ opacity: 0 }}
             animate={{ opacity: [0.2, 1, 0.2] }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1.1, repeat: Infinity }}
+            transition={{ duration: AMBIENT.loading, repeat: Infinity }}
             style={{
               display: "inline-block",
               width: 2,

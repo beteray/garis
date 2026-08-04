@@ -24,7 +24,7 @@
 
 import { motion } from "framer-motion";
 import { useMemo } from "react";
-import { AMBIENT, prefersReducedMotion } from "../lib/motion";
+import { AMBIENT, LOOP, TWEEN, prefersReducedMotion } from "../lib/motion";
 import type { RuntimeState } from "../lib/runtimeState";
 import { PRESENTATION } from "../lib/runtimeState";
 import { useDocumentVisible } from "../lib/useDocumentVisible";
@@ -162,11 +162,10 @@ export function Orb({ state, size = 128, className }: OrbProps) {
                 animate
                   ? {
                       duration: period,
-                      repeat: Infinity,
-                      ease: "easeInOut",
+                      ...LOOP,
                       delay: -field.phase * period,
                     }
-                  : { duration: 0.4 }
+                  : TWEEN.panel
               }
             />
           );
@@ -195,8 +194,8 @@ export function Orb({ state, size = 128, className }: OrbProps) {
           animate={animate ? { opacity: [0.25, 0.7, 0.25], scale: [1, 1.04, 1] } : { opacity: 0.5 }}
           transition={
             animate
-              ? { duration: AMBIENT.waiting, repeat: Infinity, ease: "easeInOut" }
-              : { duration: 0.3 }
+              ? { duration: AMBIENT.waiting, ...LOOP }
+              : TWEEN.content
           }
         />
       )}

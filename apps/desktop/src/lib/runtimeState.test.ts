@@ -131,4 +131,18 @@ describe("how each state is shown", () => {
     expect(all).not.toContain("recovering");
     expect(all).not.toContain("gaming");
   });
+
+  it("believes the engine about quiet hours rather than recomputing them", () => {
+    // The engine keeps the schedule and owns the clock. Two implementations of
+    // one rule disagree across a timezone or a DST boundary, and the one in the
+    // window is the one with less information.
+    expect(
+      inQuietHours({ enabled: true, start: "23:00", end: "08:00", active_now: false },
+        new Date("2026-08-04T02:00:00")),
+    ).toBe(false);
+    expect(
+      inQuietHours({ enabled: true, start: "23:00", end: "08:00", active_now: true },
+        new Date("2026-08-04T14:00:00")),
+    ).toBe(true);
+  });
 });

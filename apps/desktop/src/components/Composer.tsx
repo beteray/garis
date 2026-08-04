@@ -19,7 +19,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { SPRING, TWEEN, tactile } from "../lib/motion";
+import { SPRING, TWEEN, step, tactile } from "../lib/motion";
 import { useStore } from "../lib/store";
 
 const SUGGESTIONS = [
@@ -94,7 +94,7 @@ export function Composer({ showSuggestions = true }: { showSuggestions?: boolean
                 }}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ ...TWEEN.content, delay: 0.04 * index }}
+                transition={{ ...TWEEN.content, delay: step(index) }}
                 {...tactile()}
                 style={{ borderRadius: "var(--radius-pill)" }}
               >

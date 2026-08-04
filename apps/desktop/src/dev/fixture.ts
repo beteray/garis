@@ -15,6 +15,8 @@
  */
 
 import type { Link } from "../lib/api";
+import type { Appearance } from "../lib/appearance";
+import { applyAppearance } from "../lib/appearance";
 import { useStore } from "../lib/store";
 import type { Scenario } from "./scenarios";
 
@@ -52,10 +54,31 @@ export function link(): Link {
 export async function mount(): Promise<void> {
   if (!enabled()) return;
   if (typeof window === "undefined") return;
+
+  const { SCENARIOS } = await import("./scenarios");
+
+  // The whole table, published to the page. The screenshot runner reads what to
+  // photograph from here rather than parsing the source file — the parser it
+  // replaces attributed one scenario's extra captures to the next one along.
+  // Defined inside the gate, so it exists only where the fixtures do.
+  const shelf = window as unknown as {
+    __garisFixtures?: unknown;
+    __garisLook?: (look: Partial<Appearance>) => void;
+  };
+  shelf.__garisFixtures = SCENARIOS;
+
+  // Photograph a look the way a person would get it: through the resolver, not
+  // by stamping attributes on <html>. Stamping missed everything the resolver
+  // writes as an inline style, which is how a "high contrast" screenshot came
+  // out with the glass untouched.
+  shelf.__garisLook = (look) => {
+    const engine = useStore.getState().engine;
+    applyAppearance({ ...(engine?.appearance ?? {}), ...look });
+  };
+
   const name = new URLSearchParams(window.location.search).get("fixture");
   if (!name) return;
 
-  const { SCENARIOS } = await import("./scenarios");
   const scenario = SCENARIOS[name];
   if (!scenario) {
     console.warn(`GARIS: nie ma fikstury „${name}".`);
