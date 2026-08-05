@@ -11,7 +11,8 @@ import asyncio
 import json
 import sqlite3
 import threading
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -182,6 +183,45 @@ SCHEMA: list[tuple[int, str]] = [
         CREATE INDEX IF NOT EXISTS observations_sig_idx ON observations(kind, signature);
         """,
     ),
+    (
+        3,
+        """
+        -- Effects: one row per thing GARIS did to the world, reserved *before*
+        -- it happens. The primary key is what stops two workers, or a worker and
+        -- its own restarted self, from doing the same irreversible thing twice.
+        CREATE TABLE IF NOT EXISTS effects (
+            effect_id      TEXT PRIMARY KEY,
+            task_id        TEXT NOT NULL DEFAULT '',
+            step_key       TEXT NOT NULL DEFAULT '',
+            capability_id  TEXT NOT NULL,
+            arguments_hash TEXT NOT NULL DEFAULT '',
+            state          TEXT NOT NULL,          -- reserved|done|failed|uncertain
+            outcome        TEXT,                   -- JSON, once there is one
+            evidence       TEXT NOT NULL DEFAULT '[]',
+            reason         TEXT NOT NULL DEFAULT '',
+            reserved_at    REAL NOT NULL,
+            settled_at     REAL
+        );
+
+        CREATE INDEX IF NOT EXISTS effects_task_idx ON effects(task_id, reserved_at);
+
+        -- Outbox: an event is written in the same transaction as the fact it
+        -- reports, then published. Nothing here is speculative — a row exists
+        -- only because something was committed.
+        CREATE TABLE IF NOT EXISTS event_outbox (
+            event_id     TEXT PRIMARY KEY,
+            topic        TEXT NOT NULL,
+            task_id      TEXT NOT NULL DEFAULT '',
+            sequence     INTEGER NOT NULL,
+            occurred_at  REAL NOT NULL,
+            payload      TEXT NOT NULL DEFAULT '{}',
+            published_at REAL
+        );
+
+        CREATE INDEX IF NOT EXISTS outbox_pending_idx
+            ON event_outbox(published_at, sequence);
+        """,
+    ),
 ]
 
 VAULT_SCHEMA: list[tuple[int, str]] = [
@@ -244,6 +284,30 @@ class Database:
                     raise StoreError(f"Migracja {version} nie przeszła: {exc}") from exc
                 self._conn.execute("INSERT INTO schema_version(version) VALUES (?)", (version,))
             self._conn.commit()
+
+    # --- transactions ---
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Several statements that must all land, or none of them.
+
+        The reason this exists: "persist the change, then emit the event" has a
+        window between the two where a crash leaves a fact nobody was told
+        about, or — worse, if the order is reversed — an event about something
+        that never committed. Both are written here in one transaction, and the
+        outbox is drained afterwards.
+
+        Re-entrant with the instance lock, so a caller already inside one of the
+        single-statement helpers cannot deadlock against itself.
+        """
+        with self._lock:
+            try:
+                yield self._conn
+            except Exception:
+                self._conn.rollback()
+                raise
+            else:
+                self._conn.commit()
 
     # --- statements ---
 
