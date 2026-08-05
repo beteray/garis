@@ -28,7 +28,12 @@ from ..errors import (
     StoreError,
     ToolValidationError,
 )
-from ..kernel.contracts import ExecutionContext, Failure, Verification
+from ..kernel.contracts import (
+    EffectDisposition,
+    ExecutionContext,
+    Failure,
+    Verification,
+)
 from .action import Action
 from .policy import estimate_for_tool, subject_from_tool
 from .registry import ToolRegistry
@@ -83,9 +88,12 @@ class LegacyToolExecutor(TargetExecutor):
                 vault.resolve_tree(dict(params)) if vault else (dict(params), [])
             )
         except StoreError as exc:
+            # The secret could not be resolved, so the handler was never called
+            # and nothing outside GARIS moved.
             return ExecutionOutput(
                 ok=False, error=str(exc), error_kind="missing_secret",
                 retryable=False, failure=Failure.INVALID_INPUT,
+                disposition=EffectDisposition.NOT_STARTED,
             )
 
         timeout = spec.timeout
@@ -114,7 +122,8 @@ class LegacyToolExecutor(TargetExecutor):
                 error_kind="timeout",
                 retryable=True,
                 # A tool that timed out may well have done the thing and simply
-                # not come back to say so.
+                # not come back to say so. The runner reads `None` as UNKNOWN
+                # for effectful work, which is exactly right here.
                 uncertain=resolved.subject.effectful,
                 failure=Failure.EXECUTOR_FAILED,
             )

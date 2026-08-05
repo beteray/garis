@@ -15,7 +15,12 @@ import pytest
 from garis.errors import StoreError
 from garis.events import EventBus
 from garis.kernel import CapabilityError, EvidenceRecord, Failure
-from garis.kernel.effects import EffectState, EffectStore, arguments_hash
+from garis.kernel.effects import (
+    EffectDisposition,
+    EffectState,
+    EffectStore,
+    arguments_hash,
+)
 from garis.kernel.outbox import EventOutbox, deduplicate
 
 
@@ -55,13 +60,34 @@ def test_a_finished_effect_is_never_repeatable(effects: EffectStore) -> None:
     assert record.evidence[0]["fields"] == {"pid": 4120}
 
 
-def test_a_failed_effect_may_be_tried_again(effects: EffectStore) -> None:
+def test_a_failure_that_proved_nothing_changed_may_be_tried_again(
+    effects: EffectStore,
+) -> None:
     effects.reserve("e3", capability_id="windows.audio.set", args={"percent": 30})
-    effects.complete("e3", ok=False, reason="brak urządzenia")
+    effects.complete("e3", ok=False, reason="brak urządzenia",
+                     disposition=EffectDisposition.NOT_APPLIED)
 
     record = effects.load("e3")
     assert record is not None and record.state is EffectState.FAILED
-    assert record.repeatable, "porażka nie jest efektem — wolno spróbować jeszcze raz"
+    assert record.repeatable, "dowiedziona porażka bez skutku — wolno spróbować jeszcze raz"
+
+
+def test_a_failure_that_may_have_changed_something_is_not_tried_again(
+    effects: EffectStore,
+) -> None:
+    """The dangerous half of "it failed".
+
+    An executor that sent the message and then died on the readback has failed
+    *and* applied. Retrying that is how one message becomes two, so a failure
+    that says nothing about its effect is not repeatable.
+    """
+    effects.reserve("e3b", capability_id="chat.send", args={"to": "ala"})
+    effects.complete("e3b", ok=False, reason="zerwane połączenie")
+
+    record = effects.load("e3b")
+    assert record is not None and record.state is EffectState.FAILED
+    assert record.disposition is EffectDisposition.UNKNOWN
+    assert not record.repeatable, "porażka nie dowodzi, że nic się nie stało"
 
 
 def test_the_same_id_for_different_arguments_is_refused(effects: EffectStore) -> None:

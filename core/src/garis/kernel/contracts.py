@@ -158,6 +158,48 @@ class Permission(StrEnum):
     NETWORK = "network"
 
 
+class EffectDisposition(StrEnum):
+    """Whether the world moved. Orthogonal to whether the code failed.
+
+    The five questions GARIS keeps apart, and where each is answered:
+
+        Did the code run?          ``Outcome.ok``
+        Did the world change?      ``EffectDisposition``   ← here
+        Was the goal met?          ``Verification.goal_met``
+        Did anyone check?          ``Verification.checked``
+        Do we know the result?     ``not Verification.uncertain``
+
+    Collapsing any two of them is how a half-finished install gets run a second
+    time. "It raised" is not "nothing happened": an executor that changed
+    something and then failed on the readback is the ordinary shape of a partial
+    effect, and the only honest disposition for it is ``UNKNOWN``.
+    """
+
+    #: The executor was never invoked. Nothing outside GARIS can have moved.
+    NOT_STARTED = "not_started"
+    #: The executor ran and returned trustworthy structured evidence that it
+    #: changed nothing. Never inferred — an executor has to say so.
+    NOT_APPLIED = "not_applied"
+    #: An external effect happened, or its resulting state was observed. Covers
+    #: the checked goal failure: asked for 30%, measured 33%. It happened; it
+    #: was simply not what was wanted.
+    APPLIED = "applied"
+    #: The executor may have changed something and nothing can tell. The default
+    #: for any effectful work that got past the call boundary and did not come
+    #: back with proof.
+    UNKNOWN = "unknown"
+
+    @property
+    def permits_retry(self) -> bool:
+        """The whole safety rule, in one place.
+
+        Only two dispositions license running an external effect again: one
+        where the executor was never reached, and one where it proved it did
+        nothing. ``APPLIED`` already happened and ``UNKNOWN`` might have.
+        """
+        return self in (EffectDisposition.NOT_STARTED, EffectDisposition.NOT_APPLIED)
+
+
 class CapabilityError(GarisError):
     """A failure with a type attached, raised where raising is the honest move."""
 
@@ -242,6 +284,25 @@ class Verification:
             "evidence_ids": list(self.evidence_ids),
             "verified": self.verified,
         }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Verification:
+        """Restore a stored verdict exactly as it was recorded.
+
+        Every field is read back, none is recomputed. A replay that rebuilt
+        `goal_met` from the effect's state would answer "did the world move?"
+        when it was asked "was the goal met?" — and would report a measured
+        failure as a success.
+        """
+        return cls(
+            goal_met=bool(data.get("goal_met", False)),
+            checked=bool(data.get("checked", False)),
+            uncertain=bool(data.get("uncertain", False)),
+            checked_by=str(data.get("checked_by", "none")),
+            reason=str(data.get("reason", "")),
+            unmet=tuple(data.get("unmet", ())),
+            evidence_ids=tuple(data.get("evidence_ids", ())),
+        )
 
 
 # ------------------------------------------------------------------- evidence
@@ -582,6 +643,7 @@ __all__ = [
     "CapabilityError",
     "CapabilityTarget",
     "Effect",
+    "EffectDisposition",
     "EvidenceRecord",
     "ExecutionContext",
     "Failure",

@@ -42,7 +42,7 @@ from typing import Any
 # Risk, Permission and Effect live in the kernel: the policy layer has to read
 # all three and cannot import this package. Re-exported so `from
 # garis.capabilities import Risk` keeps working.
-from ..kernel.contracts import Effect, Permission, Risk
+from ..kernel.contracts import Effect, EffectDisposition, Permission, Risk
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +72,13 @@ class Outcome:
     #: change. Neither success nor failure: the honest third answer, and the
     #: reason a caller must not retry blindly.
     uncertain: bool = False
+    #: What happened outside GARIS, declared by the capability that would know.
+    #: `None` means it did not say, which the runner reads as `UNKNOWN` for
+    #: anything effectful — the safe reading, since a capability that failed
+    #: after changing something looks exactly like one that failed before.
+    #: Declaring `NOT_APPLIED` is a claim about the world and must rest on
+    #: evidence, not on the fact that an exception was raised early.
+    disposition: EffectDisposition | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +249,7 @@ def evidence_verifier(note: str = "Sprawdziłem wynik po fakcie.") -> Verifier:
 __all__ = [
     "Capability",
     "Effect",
+    "EffectDisposition",
     "Executor",
     "Field",
     "Invocation",

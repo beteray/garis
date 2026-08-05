@@ -34,7 +34,7 @@ from typing import Any
 
 from ..errors import StoreError
 from ..store import Database
-from .contracts import CapabilityError, EvidenceRecord, Failure
+from .contracts import CapabilityError, EffectDisposition, EvidenceRecord, Failure
 
 
 class EffectState(StrEnum):
@@ -61,16 +61,27 @@ class EffectRecord:
     reason: str = ""
     reserved_at: float = 0.0
     settled_at: float | None = None
+    #: What happened outside GARIS. The only field that may license a retry.
+    disposition: EffectDisposition = EffectDisposition.UNKNOWN
+    attempt_number: int = 1
+    #: Every settled attempt, oldest first, append-only. A retry that overwrote
+    #: the previous attempt would erase the reason it was retried.
+    attempts: tuple[Mapping[str, Any], ...] = ()
+    #: The verifier's whole verdict, stored so a replay hands back what was
+    #: measured rather than what the state implies.
+    verification: Mapping[str, Any] | None = None
 
     @property
     def repeatable(self) -> bool:
-        """May this be attempted again?
+        """May the external effect be attempted again?
 
-        A failure may. A success may not — it already happened. An uncertain
-        effect may not either, and that is the point: retrying something that
-        might have worked is how one payment becomes two.
+        Asked of the disposition, not of the state. "It failed" is not "nothing
+        happened": an executor that changed something and then failed on the
+        readback has failed *and* applied, and running it again is how one
+        message becomes two. Only a failure that never reached the executor, or
+        one that proved it changed nothing, may be repeated.
         """
-        return self.state is EffectState.FAILED
+        return self.state is EffectState.FAILED and self.disposition.permits_retry
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,13 +170,37 @@ class EffectStore:
                 )
             if not existing.repeatable:
                 return EffectReservation(granted=False, record=existing)
-            # A failure is not an effect. Re-claiming the row rather than
-            # inserting a second one keeps one identity per intended act, so the
-            # retry and the attempt that failed are visibly the same thing.
+            # A failure that provably changed nothing may be tried again under
+            # the same logical identity — that is what the deterministic effect
+            # id is for. The previous attempt is appended to the history first:
+            # overwriting it would erase the evidence of why the retry happened.
+            attempt = existing.attempt_number + 1
             conn.execute(
                 "UPDATE effects SET state = ?, reserved_at = ?, settled_at = NULL,"
-                " outcome = NULL, reason = '' WHERE effect_id = ?",
-                (EffectState.RESERVED.value, now, effect_id),
+                " outcome = NULL, reason = '', attempt_number = ?, attempts = ?,"
+                " verification = NULL WHERE effect_id = ?",
+                (
+                    EffectState.RESERVED.value, now, attempt,
+                    json.dumps(
+                        [*existing.attempts, _attempt_entry(existing)],
+                        ensure_ascii=False, default=repr,
+                    ),
+                    effect_id,
+                ),
+            )
+            return EffectReservation(
+                granted=True,
+                record=EffectRecord(
+                    effect_id=effect_id,
+                    capability_id=capability_id,
+                    state=EffectState.RESERVED,
+                    task_id=task_id,
+                    step_key=step_key,
+                    arguments_hash=fingerprint,
+                    reserved_at=now,
+                    attempt_number=attempt,
+                    attempts=(*existing.attempts, _attempt_entry(existing)),
+                ),
             )
         else:
             try:
@@ -201,13 +236,23 @@ class EffectStore:
         outcome: Mapping[str, Any] | None = None,
         evidence: Sequence[EvidenceRecord] = (),
         reason: str = "",
+        disposition: EffectDisposition | None = None,
     ) -> None:
         state = EffectState.DONE if ok else EffectState.FAILED
-        self._settle(effect_id, state, outcome=outcome, evidence=evidence, reason=reason)
+        if disposition is None:
+            # A success applied; a failure with nothing said about it could have
+            # applied. Guessing `NOT_APPLIED` here is the one guess that would
+            # let a partial effect be run again.
+            disposition = (
+                EffectDisposition.APPLIED if ok else EffectDisposition.UNKNOWN
+            )
+        self._settle(effect_id, state, outcome=outcome, evidence=evidence,
+                     reason=reason, disposition=disposition)
 
     def mark_uncertain(self, effect_id: str, reason: str) -> None:
         """It may have happened. Say so, and stop anything from retrying it."""
-        self._settle(effect_id, EffectState.UNCERTAIN, reason=reason)
+        self._settle(effect_id, EffectState.UNCERTAIN, reason=reason,
+                     disposition=EffectDisposition.UNKNOWN)
 
     def settle_in(
         self,
@@ -219,14 +264,21 @@ class EffectStore:
         evidence: Sequence[EvidenceRecord] = (),
         reason: str = "",
         uncertain: bool = False,
+        disposition: EffectDisposition = EffectDisposition.UNKNOWN,
+        verification: Mapping[str, Any] | None = None,
     ) -> EffectState:
         """Settle inside a caller's transaction.
 
         This is what makes "an effect is never successful before its evidence
-        committed" true rather than intended: the state, the evidence and the
-        event that announces them go in together, and a failure anywhere in the
-        transaction leaves the effect unsettled — which the startup sweep then
-        reads as uncertain, correctly.
+        committed" true rather than intended: the state, the evidence, the
+        verdict and the event that announces them go in together, and a failure
+        anywhere in the transaction leaves the effect unsettled — which the
+        startup sweep then reads as uncertain, correctly.
+
+        ``state`` records how the row was settled; ``disposition`` records what
+        happened outside GARIS. `DONE` means "settled truthfully", not "the user
+        got what they asked for" — a checked postcondition failure is `DONE`,
+        `APPLIED`, and `goal_met=False`, all at once and without contradiction.
         """
         state = (
             EffectState.UNCERTAIN if uncertain
@@ -234,7 +286,7 @@ class EffectStore:
             else EffectState.FAILED
         )
         self._write(conn, effect_id, state, outcome=outcome, evidence=evidence,
-                    reason=reason)
+                    reason=reason, disposition=disposition, verification=verification)
         return state
 
     def _settle(
@@ -245,10 +297,11 @@ class EffectStore:
         outcome: Mapping[str, Any] | None = None,
         evidence: Sequence[EvidenceRecord] = (),
         reason: str = "",
+        disposition: EffectDisposition = EffectDisposition.UNKNOWN,
     ) -> None:
         with self.db.transaction() as conn:
             self._write(conn, effect_id, state, outcome=outcome, evidence=evidence,
-                        reason=reason)
+                        reason=reason, disposition=disposition)
 
     def _write(
         self,
@@ -259,10 +312,12 @@ class EffectStore:
         outcome: Mapping[str, Any] | None = None,
         evidence: Sequence[EvidenceRecord] = (),
         reason: str = "",
+        disposition: EffectDisposition = EffectDisposition.UNKNOWN,
+        verification: Mapping[str, Any] | None = None,
     ) -> None:
         conn.execute(
             "UPDATE effects SET state = ?, outcome = ?, evidence = ?, reason = ?,"
-            " settled_at = ? WHERE effect_id = ?",
+            " settled_at = ?, disposition = ?, verification = ? WHERE effect_id = ?",
             (
                 state.value,
                 json.dumps(outcome, ensure_ascii=False, default=repr)
@@ -271,6 +326,9 @@ class EffectStore:
                            default=repr),
                 reason,
                 time.time(),
+                disposition.value,
+                json.dumps(verification, ensure_ascii=False, default=repr)
+                if verification is not None else None,
                 effect_id,
             ),
         )
@@ -310,7 +368,22 @@ class EffectStore:
         return stranded
 
 
+def _attempt_entry(record: EffectRecord) -> dict[str, Any]:
+    """One line of history, written when an attempt is superseded by another."""
+    return {
+        "attempt_number": record.attempt_number,
+        "state": record.state.value,
+        "disposition": record.disposition.value,
+        "reason": record.reason,
+        "outcome": dict(record.outcome) if record.outcome else None,
+        "evidence": [dict(e) for e in record.evidence],
+        "verification": dict(record.verification) if record.verification else None,
+        "settled_at": record.settled_at,
+    }
+
+
 def _record(row: Any) -> EffectRecord:
+    keys = row.keys()
     return EffectRecord(
         effect_id=row["effect_id"],
         capability_id=row["capability_id"],
@@ -323,10 +396,27 @@ def _record(row: Any) -> EffectRecord:
         reason=row["reason"] or "",
         reserved_at=row["reserved_at"],
         settled_at=row["settled_at"],
+        # Rows written before dispositions existed carry 'unknown', which is the
+        # truth about them: nobody recorded whether the world moved.
+        disposition=EffectDisposition(
+            row["disposition"] if "disposition" in keys and row["disposition"]
+            else EffectDisposition.UNKNOWN.value
+        ),
+        attempt_number=(
+            int(row["attempt_number"]) if "attempt_number" in keys else 1
+        ),
+        attempts=tuple(
+            json.loads(row["attempts"] or "[]") if "attempts" in keys else []
+        ),
+        verification=(
+            json.loads(row["verification"])
+            if "verification" in keys and row["verification"] else None
+        ),
     )
 
 
 __all__ = [
+    "EffectDisposition",
     "EffectRecord",
     "EffectReservation",
     "EffectState",

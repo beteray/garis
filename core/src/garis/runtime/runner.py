@@ -62,6 +62,7 @@ from ..kernel.contracts import (
     CapabilityError,
     CapabilityTarget,
     Effect,
+    EffectDisposition,
     EvidenceRecord,
     ExecutionContext,
     Failure,
@@ -143,6 +144,9 @@ class ExecutionOutput:
     #: The executor got far enough that it cannot say whether the world moved.
     uncertain: bool = False
     failure: Failure | None = None
+    #: What happened outside GARIS, when the executor is in a position to say.
+    #: `None` means it did not, and the runner supplies the safe reading.
+    disposition: EffectDisposition | None = None
 
 
 class TargetExecutor(Protocol):
@@ -199,6 +203,8 @@ class RunnerResult:
     failure: Failure | None = None
     uncertain: bool = False
     replayed: bool = False
+    disposition: EffectDisposition = EffectDisposition.NOT_STARTED
+    attempt_number: int = 1
     audit_id: int = 0
     event_id: str = ""
     error: str = ""
@@ -444,7 +450,18 @@ class CapabilityRunner:
         self.outbox.drain()  # 15, for the start: published only now it committed
 
         # 10. execute --------------------------------------------------------
-        output = await self._execute(executor, resolved, params, context, action)
+        # Whether the adapter was actually reached is recorded as a fact, not
+        # deduced afterwards: it decides NOT_STARTED versus UNKNOWN, and so
+        # decides whether this may ever be run again.
+        crossed: list[bool] = []
+        output = await self._execute(
+            executor, resolved, params, context, action, crossed
+        )
+        disposition = decide_disposition(
+            executor_started=bool(crossed),
+            effectful=resolved.subject.effectful,
+            output=output,
+        )
 
         # 13. verify, independently of what the work said about itself -------
         if output.ok and not output.uncertain:
@@ -474,7 +491,8 @@ class CapabilityRunner:
         # 14 + 15. persist, then publish what committed ----------------------
         return self._settle(
             target, source, action, resolved, verdict, output, verification,
-            records, effect_id, started, context,
+            records, effect_id, started, context, disposition,
+            reservation.record.attempt_number,
         )
 
     async def _execute(
@@ -484,10 +502,20 @@ class CapabilityRunner:
         params: dict[str, Any],
         context: ExecutionContext,
         action: Action,
+        crossed: list[bool],
     ) -> ExecutionOutput:
         """Step 10 and 11. The only place work happens, and the only place a
-        crash is turned into a fact rather than allowed to escape."""
+        crash is turned into a fact rather than allowed to escape.
+
+        ``crossed`` records whether the call boundary was actually reached. It
+        is set immediately before the adapter is invoked and read afterwards,
+        because "did execution start?" is the difference between `NOT_STARTED`
+        and `UNKNOWN` — between an effect that certainly did not happen and one
+        that might have. Inferring it from the exception type, the elapsed time
+        or the absence of output would be guessing about the world.
+        """
         try:
+            crossed.append(True)
             return await executor.execute(resolved, params, context, action)
         except asyncio.CancelledError:
             raise
@@ -499,9 +527,10 @@ class CapabilityRunner:
                 uncertain=exc.uncertain, failure=exc.failure,
             )
         except Exception as exc:
-            # It got far enough to fail. For anything that changes the world
-            # that is not a clean failure — nobody knows what happened, and
-            # saying so is the whole point of the uncertain state.
+            # It got far enough to fail, and an exception says nothing about
+            # whether the world moved first: a message sent and then lost on the
+            # readback raises exactly like one never sent. For effectful work the
+            # only honest answer is that nobody knows.
             return ExecutionOutput(
                 ok=False,
                 error=f"{type(exc).__name__}: {exc}",
@@ -525,6 +554,8 @@ class CapabilityRunner:
         effect_id: str,
         started: float,
         context: ExecutionContext,
+        disposition: EffectDisposition,
+        attempt: int,
     ) -> RunnerResult:
         """Step 14: one transaction for the settlement, the audit row and the
         event. Nothing is successful until all three commit."""
@@ -555,16 +586,26 @@ class CapabilityRunner:
             topic = Topic.ACTION_FAILED
 
         detail = output.error or _summarise(output.value)
+        # An effect is repeatable only when the executor never ran or proved it
+        # changed nothing. Everything else — success, polite failure, crash —
+        # has either happened or might have, and running it again is how one
+        # install becomes two.
+        retryable = output.retryable and disposition.permits_retry
         payload = {
             "tool": action.tool,
             "target": target.name,
             "source": source,
             "effect_id": effect_id,
+            "attempt_number": attempt,
             "parent_effect_id": context.parent_effect_id,
             "duration_ms": duration,
             "summary": _summarise(output.value),
+            "disposition": disposition.value,
+            "retryable": retryable,
+            "goal_met": verification.goal_met,
+            "checked": verification.checked,
             "verified": verification.verified,
-            "uncertain": uncertain,
+            "uncertain": verification.uncertain or uncertain,
             "failure_type": failure.value if failure else "",
         }
         if failure is not None:
@@ -580,10 +621,14 @@ class CapabilityRunner:
                     # postcondition still happened, and must never be repeated
                     # as if it had not.
                     ok=output.ok,
-                    outcome={"value": output.value, "verified": verification.verified},
+                    outcome={"value": output.value},
                     evidence=records,
                     reason=output.error,
                     uncertain=uncertain,
+                    disposition=disposition,
+                    # The whole verdict, so a replay hands back what was measured
+                    # instead of what the effect's state implies.
+                    verification=verification.to_dict(),
                 )
                 audit_id = self.audit.stage(
                     conn,
@@ -595,7 +640,8 @@ class CapabilityRunner:
                     rule=verdict.rule,
                     params=action.params,
                     outcome=audit_outcome,
-                    detail=detail,
+                    detail=f"[{disposition.value}] {detail}" if detail
+                    else f"[{disposition.value}]",
                     duration_ms=duration,
                 )
                 event = self.outbox.stage(
@@ -632,7 +678,9 @@ class CapabilityRunner:
             event_id=event.event_id,
             error=output.error,
             error_kind=output.error_kind,
-            retryable=output.retryable and not uncertain,
+            retryable=retryable,
+            disposition=disposition,
+            attempt_number=attempt,
             duration_ms=duration,
         )
 
@@ -647,25 +695,40 @@ class CapabilityRunner:
         started: float,
         context: ExecutionContext,
     ) -> RunnerResult:
-        """Steps 8 and 9. A success is handed back; anything uncertain is not.
+        """Steps 8 and 9. What happened is handed back; nothing is done again.
 
         Refusing to replay an uncertain effect is the point of having the state
         at all: retrying something that might have worked is how one payment
         becomes two.
+
+        The stored verdict is returned **exactly as it was recorded**. Rebuilding
+        it from the effect's state would answer the wrong question — `DONE` means
+        the record was settled truthfully, not that the user got what they asked
+        for. A volume set to 33% when 30% was requested is `DONE`, `APPLIED` and
+        `goal_met=False` all at once, and a replay that inferred `goal_met=True`
+        from `DONE` would turn a measured failure into a success on the way back
+        out.
         """
         replaying = record.state is EffectState.DONE
         outcome = dict(record.outcome or {})
         uncertain = record.state is EffectState.UNCERTAIN
 
         if replaying:
-            verification = Verification(
-                goal_met=True, checked=bool(outcome.get("verified")),
-                checked_by="rules" if outcome.get("verified") else "none",
-                reason="Ten efekt już się wydarzył — odtwarzam zapis, nie powtarzam go.",
+            stored = record.verification
+            if stored:
+                verification = Verification.from_dict(stored)
+            else:
+                # Settled by an older build that kept no verdict. Nobody checked
+                # anything we can point at, so nothing is claimed.
+                verification = Verification.unchecked(
+                    "Ten efekt już się wydarzył; nie mam zapisanego sprawdzenia."
+                )
+            failure: Failure | None = (
+                None if verification.goal_met or not verification.checked
+                else Failure.POSTCONDITION_FAILED
             )
-            failure: Failure | None = None
             audit_outcome = AUDIT_REPLAYED
-            error = ""
+            error = "" if failure is None else verification.reason
         elif uncertain:
             verification = Verification.uncertain_effect(record.reason or (
                 "Nie wiem, czy ta operacja doszła do skutku — nie powtarzam jej."
@@ -694,7 +757,7 @@ class CapabilityRunner:
                 rule=verdict.rule,
                 params=action.params,
                 outcome=audit_outcome,
-                detail=error or "odtworzony efekt",
+                detail=f"[{record.disposition.value}] " + (error or "odtworzony efekt"),
                 duration_ms=duration,
             )
             event = self.outbox.stage(
@@ -706,8 +769,13 @@ class CapabilityRunner:
                     "target": name,
                     "source": source,
                     "effect_id": record.effect_id,
+                    "attempt_number": record.attempt_number,
                     "replayed": replaying,
                     "uncertain": uncertain,
+                    "disposition": record.disposition.value,
+                    "retryable": False,
+                    "goal_met": verification.goal_met,
+                    "checked": verification.checked,
                     "duration_ms": duration,
                     "failure_type": failure.value if failure else "",
                 },
@@ -720,8 +788,15 @@ class CapabilityRunner:
             evidence=tuple(redact_evidence(e.get("fields", {})) for e in record.evidence),
             verification=verification, failure=failure, uncertain=uncertain,
             replayed=replaying, audit_id=audit_id, event_id=event.event_id,
-            error=error, error_kind="uncertain" if failure else "",
-            retryable=False, duration_ms=duration,
+            error=error, error_kind="uncertain" if uncertain else (
+                "postcondition" if failure else ""
+            ),
+            # Never. A replayed effect already happened, and one that is
+            # uncertain or in flight must not be attempted on a hunch.
+            retryable=False,
+            disposition=record.disposition,
+            attempt_number=record.attempt_number,
+            duration_ms=duration,
         )
 
     # ---------------------------------------------------------------- gates
@@ -806,6 +881,10 @@ class CapabilityRunner:
         effects = (
             sorted(e.value for e in resolved.subject.effects) if resolved else []
         )
+        # Nothing was executed, so nothing outside GARIS can have moved. This is
+        # the one disposition the runner may assert on its own, because it rests
+        # on a fact it owns: the call boundary was never reached.
+        disposition = EffectDisposition.NOT_STARTED
         with self.effects.db.transaction() as conn:
             audit_id = self.audit.stage(
                 conn,
@@ -817,7 +896,8 @@ class CapabilityRunner:
                 rule=used.rule,
                 params=action.params,
                 outcome=audit_outcome,
-                detail=detail,
+                detail=f"[{disposition.value}] {detail}" if detail
+                else f"[{disposition.value}]",
                 duration_ms=duration,
             )
             event = self.outbox.stage(
@@ -831,6 +911,11 @@ class CapabilityRunner:
                     "rule": used.rule,
                     "reason": used.reason,
                     "failure_type": failure.value,
+                    "disposition": disposition.value,
+                    "retryable": retryable,
+                    "goal_met": False,
+                    "checked": False,
+                    "uncertain": False,
                     "duration_ms": duration,
                 },
             )
@@ -844,6 +929,7 @@ class CapabilityRunner:
             ),
             failure=failure, audit_id=audit_id, event_id=event.event_id,
             error=detail, error_kind=error_kind, retryable=retryable,
+            disposition=disposition,
             duration_ms=duration, denial=denial,
         )
 
@@ -881,6 +967,39 @@ def derive_effect_id(name: str, action: Action, subject: PolicySubject) -> str:
         )
         return "eff-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:28]
     return "inv-" + uuid.uuid4().hex[:28]
+
+
+def decide_disposition(
+    *,
+    executor_started: bool,
+    effectful: bool,
+    output: ExecutionOutput,
+) -> EffectDisposition:
+    """Did the world move? Answered from facts, never from wording.
+
+    The order matters. If the call boundary was never crossed, nothing outside
+    GARIS can have changed, full stop. If it was, an executor's own structured
+    declaration is believed — that is the only way `NOT_APPLIED` is ever
+    reached, because it is a claim about the world that only the thing touching
+    the world can make. Failing that, a read has nothing to apply, and anything
+    effectful that got past the boundary is `UNKNOWN` whether it succeeded,
+    failed politely or raised.
+
+    `APPLIED` covers the checked goal failure: asked for 30%, measured 33%. The
+    effect happened. It was simply not what was wanted, and that is a question
+    for the verifier, not for this function.
+    """
+    if not executor_started:
+        return EffectDisposition.NOT_STARTED
+    if output.disposition is not None:
+        return output.disposition
+    if not effectful:
+        # A read changes nothing by construction, so a failed read is free to
+        # be attempted again.
+        return EffectDisposition.NOT_APPLIED
+    if output.ok:
+        return EffectDisposition.APPLIED
+    return EffectDisposition.UNKNOWN
 
 
 def child_step_key(parent: str | None, tool: str, ordinal: int) -> str:
@@ -955,10 +1074,12 @@ __all__ = [
     "AUDIT_REPLAYED",
     "AUDIT_UNCERTAIN",
     "CapabilityRunner",
+    "EffectDisposition",
     "ExecutionOutput",
     "Resolved",
     "RunnerResult",
     "TargetExecutor",
     "child_step_key",
+    "decide_disposition",
     "derive_effect_id",
 ]

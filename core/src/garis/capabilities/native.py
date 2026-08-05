@@ -107,6 +107,10 @@ class NativeCapabilityExecutor(TargetExecutor):
             error_kind="error" if not outcome.ok else "",
             uncertain=outcome.uncertain,
             failure=None if outcome.ok else Failure.EXECUTOR_FAILED,
+            # Forwarded verbatim, including `None`. Only the capability knows
+            # whether it changed anything, and the runner must not improve on
+            # its silence.
+            disposition=outcome.disposition,
         )
 
     async def verify(

@@ -222,6 +222,33 @@ SCHEMA: list[tuple[int, str]] = [
             ON event_outbox(published_at, sequence);
         """,
     ),
+    (
+        4,
+        """
+        -- "Did it fail?" and "did the world move?" are different questions, and
+        -- answering the second one with the first is how a half-finished install
+        -- gets run again. `state` says how the record was settled; `disposition`
+        -- says what happened outside GARIS, and only the second one may license
+        -- a retry.
+        --
+        -- Existing rows migrate to 'unknown' rather than to the old rule that
+        -- every failure is repeatable. Their external outcome genuinely is
+        -- unknown — nobody recorded it — and inventing a safer-sounding answer
+        -- for them would be the same untruth in a new column.
+        ALTER TABLE effects ADD COLUMN disposition TEXT NOT NULL DEFAULT 'unknown';
+
+        -- Attempts are numbered and their history is append-only. A retry that
+        -- overwrote the previous attempt's evidence would erase the reason it
+        -- was retried.
+        ALTER TABLE effects ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE effects ADD COLUMN attempts TEXT NOT NULL DEFAULT '[]';
+
+        -- The verifier's whole verdict, stored so a replay hands back what was
+        -- actually measured. Reconstructing `goal_met` from `state` is how a
+        -- checked failure ("asked for 30%, measured 33%") replays as a success.
+        ALTER TABLE effects ADD COLUMN verification TEXT;
+        """,
+    ),
 ]
 
 VAULT_SCHEMA: list[tuple[int, str]] = [
