@@ -155,7 +155,7 @@ async def test_completion_requires_a_step_that_actually_ran(runtime, bus, config
 
 async def test_verification_requires_a_verifier_that_ran() -> None:
     """8. "Nothing failed" is not "checked"."""
-    plain = Verification(ok=True, note="nic nie zawiodło", checked_by="none")
+    plain = Verification(goal_met=True, reason="nic nie zawiodło", checked_by="none")
     assert not plain.checked
 
     report = build_report(
@@ -218,11 +218,12 @@ async def test_no_template_says_checked_without_evidence() -> None:
     plan = Plan(steps=[PlanStep(key="a", tool="look")])
 
     unchecked = build_report(goal, plan, evidence,
-                             Verification(ok=True, note="", checked_by="none"))
+                             Verification(goal_met=True, reason="", checked_by="none"))
     assert "sprawdz" not in unchecked.short.lower().replace("nie sprawdzałem", "")
 
     checked = build_report(goal, plan, evidence,
-                           Verification(ok=True, note="Sprawdziłem rezultat.",
+                           Verification(goal_met=True, checked=True,
+                                        reason="Sprawdziłem rezultat.",
                                         checked_by="model"))
     assert checked.verified
 

@@ -286,8 +286,9 @@ class AgentLoop:
         state = AgentState.DONE if (executed and verification.ok) else AgentState.FAILED
         if not executed and verification.ok:
             verification = Verification(
-                ok=False,
-                note="Nie wykonałem żadnego kroku, więc nie ma czego uznać za zrobione.",
+                goal_met=False,
+                reason="Nie wykonałem żadnego kroku, więc nie ma czego uznać za zrobione.",
+                checked=True,
                 checked_by="rules",
             )
 

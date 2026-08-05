@@ -133,8 +133,9 @@ def build_report(
             "repairs": repairs,
         },
         # "Verified" is a claim about a check that ran, not about the absence of
-        # errors. Both halves are required, and both come from the verifier.
-        verified=verification.ok and verification.checked,
+        # errors, and an uncertain effect is not a verified one. All three facts
+        # come from the verifier, and `Verification.verified` is where they meet.
+        verified=verification.verified,
         problems=tuple(problems),
     )
 
