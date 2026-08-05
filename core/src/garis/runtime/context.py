@@ -17,11 +17,13 @@ from typing import TYPE_CHECKING, Any
 
 from ..config import Config
 from ..events import EventBus, Topic
+from ..kernel.contracts import ExecutionContext, RuntimeProfile
 from ..net import HttpClient
 from ..paths import Paths
 from ..store import Database
 from .action import Action, ActionResult
 from .registry import ToolSpec
+from .runner import child_step_key
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..memory import MemoryService
@@ -43,6 +45,10 @@ class ToolContext:
     memory: MemoryService | None = None
     deadline: float | None = None
     scratch: dict[str, Any] = field(default_factory=dict)
+    #: The runner's view of this invocation: profile, depth, cancellation and
+    #: the effect id this work is running under. Nested calls inherit it.
+    execution: ExecutionContext | None = None
+    _nested: int = 0
 
     # --- identity ---
 
@@ -59,16 +65,35 @@ class ToolContext:
     # --- nested capability use ---
 
     async def perform(self, tool: str, /, *, intent: str = "", **params: Any) -> ActionResult:
-        """Run another tool from inside this one, fully policed and audited."""
+        """Run another tool from inside this one, fully policed and audited.
+
+        Recursion through the one envelope, not a way around it: the child gets
+        its own policy decision, its own effect, its own audit row and its own
+        verification. It inherits the task, the runtime profile and the
+        cancellation signal, and it is given a **derived** step key — reusing the
+        parent's would make the two effects collide, so a resumed task would
+        replay one of them in place of the other.
+        """
+        self._nested += 1
+        parent = self.execution
         nested = Action(
             tool=tool,
             params=params,
             intent=intent or self.action.intent,
             task_id=self.action.task_id,
-            step_key=self.action.step_key,
+            step_key=child_step_key(self.action.step_key, tool, self._nested),
             target=self.action.target,
         )
-        return await self.runtime.perform(nested)
+        child = ExecutionContext(
+            task_id=self.action.task_id or "",
+            step_key=nested.step_key or "",
+            cancelled=parent.cancelled if parent else (lambda: False),
+            progress=parent.progress if parent else (lambda _: None),
+            runtime_profile=parent.runtime_profile if parent else RuntimeProfile.PRODUCTION,
+            parent_effect_id=parent.effect_id if parent else "",
+            depth=(parent.depth if parent else 0) + 1,
+        )
+        return await self.runtime.perform(nested, context=child)
 
     # --- talking to the rest of the system ---
 

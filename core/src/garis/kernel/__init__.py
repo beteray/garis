@@ -7,12 +7,19 @@ true of GARIS regardless of what it is running on or which model it is using.
 from __future__ import annotations
 
 from .contracts import (
+    EFFECTFUL,
+    MAX_NESTING_DEPTH,
     CapabilityError,
     CapabilityTarget,
+    Effect,
     EvidenceRecord,
     ExecutionContext,
     Failure,
+    Permission,
+    PolicyEstimate,
+    PolicySubject,
     ProgressEvent,
+    Risk,
     RuntimeEvent,
     RuntimeProfile,
     StepTarget,
@@ -25,12 +32,19 @@ from .contracts import (
 )
 
 __all__ = [
+    "EFFECTFUL",
+    "MAX_NESTING_DEPTH",
     "CapabilityError",
     "CapabilityTarget",
+    "Effect",
     "EvidenceRecord",
     "ExecutionContext",
     "Failure",
+    "Permission",
+    "PolicyEstimate",
+    "PolicySubject",
     "ProgressEvent",
+    "Risk",
     "RuntimeEvent",
     "RuntimeProfile",
     "StepTarget",

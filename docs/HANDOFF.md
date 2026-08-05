@@ -97,10 +97,19 @@ udawać sukces.
 
 Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
 
-1. **Nic nie wykonuje się poza `Runtime.perform()`.** Narzędzie wołające narzędzie
-   używa `ctx.perform()`. Zero bezpośrednich `subprocess` w agencie czy zadaniach.
-2. **Efekty deklaruje `ToolSpec`, nie wołający.** Dodajesz narzędzie, które wysyła
-   wiadomość — deklarujesz `Effect.SEND_MESSAGE`, choćby to była „tylko notatka".
+1. **Nic nie wykonuje się poza `CapabilityRunner`.** Jedna koperta dla narzędzi
+   i dla zdolności: jedna decyzja polityki, jeden wpis audytu, jeden efekt na
+   wywołanie. `Runtime.perform()` została fasadą zgodności — buduje cel, woła
+   runner raz i tłumaczy wynik; nie robi polityki, zgód, dzierżaw, audytu,
+   trwałości ani zdarzeń. Narzędzie wołające narzędzie używa `ctx.perform()`:
+   rekurencja przez tę samą kopertę, z własnym kluczem kroku i własnym efektem.
+   Zero bezpośrednich `subprocess` w agencie czy zadaniach.
+2. **Efekty deklaruje `ToolSpec` albo `Capability`, nie wołający.** Dodajesz
+   narzędzie, które wysyła wiadomość — deklarujesz `Effect.SEND_MESSAGE`, choćby
+   to była „tylko notatka". `Permission` nie opisuje skutku i nigdy go nie
+   zastępuje: `FILES` obejmuje odczyt nazwy i trwałe skasowanie katalogu,
+   `PROCESS` obejmuje listowanie i zabicie procesu. Zgadywanie jednego z
+   drugiego to bramka odczytu założona na kasowanie.
 3. **Osobowość nie dotyka polityki.** `PolicyEngine` przyjmuje `autonomy` i `paths`.
    Koniec.
 4. **Poświadczenia nie są pamięcią.** Zawsze sejf, zawsze `vault://` w parametrach.

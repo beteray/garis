@@ -21,6 +21,7 @@ from .app import Garis, build
 from .console import use_utf8
 from .errors import GarisError
 from .events import Topic
+from .kernel.contracts import RuntimeProfile
 from .memory import MemoryKind
 from .tasks import TaskState
 
@@ -605,12 +606,15 @@ async def cmd_token(garis: Garis, args: argparse.Namespace) -> int:
 
 
 async def _run(args: argparse.Namespace) -> int:
-    # No stub provider. It exists for tests; wiring it into every CLI and server
-    # process meant a machine with no API key had a "model" that answered every
+    # PRODUCTION, said out loud rather than left to a default. This is the
+    # process the desktop shell starts as a sidecar and the one `garis serve`
+    # runs, so it is the process that must not contain a stub: one answers every
     # planning prompt with a keyword guess and every verification prompt with
     # `{"ok": true, "note": "Sprawdzone."}`. Local questions are answered by
     # agent/reflex.py with no model at all; anything else says a model is missing.
-    garis = build(args.home)
+    # The profile is validated at build time, so a process that somehow acquired
+    # a stand-in refuses to start instead of quietly answering with it.
+    garis = build(args.home, profile=RuntimeProfile.PRODUCTION)
     try:
         return await args.handler(garis, args)
     finally:

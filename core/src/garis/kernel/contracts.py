@@ -50,6 +50,114 @@ class Failure(StrEnum):
     PERSISTENCE_FAILED = "persistence_failed"
 
 
+class Effect(StrEnum):
+    """What an action does to the world. Declared per tool and per capability.
+
+    Lives here rather than in ``runtime`` because both the tool layer and the
+    capability layer must speak it, and neither may import the other. The old
+    home re-exports it, so every existing ``from garis.runtime import Effect``
+    keeps working.
+    """
+
+    READ = "read"                      # inspect files, processes, screen text
+    WRITE = "write"                    # create or modify recoverable data
+    DELETE_PERMANENT = "delete_permanent"   # irreversible loss
+    EXEC = "exec"                      # run a program or script
+    INSTALL = "install"                # add or update software
+    NETWORK = "network"                # outbound traffic
+    PAYMENT = "payment"                # spend money
+    PUBLISH = "publish"                # make something publicly visible
+    SEND_MESSAGE = "send_message"      # speak as the user to another person
+    CREDENTIALS = "credentials"        # touch passwords, tokens, logins
+    SYSTEM_CONFIG = "system_config"    # registry, services, firewall, policies
+    INPUT_CONTROL = "input_control"    # drive mouse and keyboard
+    CAPTURE = "capture"                # screen, microphone, camera
+    ELEVATE = "elevate"                # require administrator rights
+    REMOTE = "remote"                  # act on another machine
+
+    @property
+    def label_pl(self) -> str:
+        return _EFFECT_LABELS_PL.get(self, self.value)
+
+
+_EFFECT_LABELS_PL: dict[Effect, str] = {
+    Effect.READ: "odczyt",
+    Effect.WRITE: "zapis",
+    Effect.DELETE_PERMANENT: "trwałe usunięcie",
+    Effect.EXEC: "uruchomienie programu",
+    Effect.INSTALL: "instalacja",
+    Effect.NETWORK: "połączenie sieciowe",
+    Effect.PAYMENT: "płatność",
+    Effect.PUBLISH: "publikacja",
+    Effect.SEND_MESSAGE: "wysłanie wiadomości",
+    Effect.CREDENTIALS: "dane logowania",
+    Effect.SYSTEM_CONFIG: "zmiana ustawień systemu",
+    Effect.INPUT_CONTROL: "sterowanie myszą i klawiaturą",
+    Effect.CAPTURE: "nagrywanie ekranu lub mikrofonu",
+    Effect.ELEVATE: "uprawnienia administratora",
+    Effect.REMOTE: "działanie na innym urządzeniu",
+}
+
+#: Effects that mean "this changed something outside GARIS". An operation
+#: declaring any of these gets a *deterministic* effect id, so a task resumed
+#: after a crash resolves to the same reservation instead of doing it twice.
+#: Reads are deliberately absent: replaying a measurement would hand back a
+#: stale reading, and re-measuring is both free and more truthful.
+EFFECTFUL: frozenset[Effect] = frozenset(
+    {
+        Effect.WRITE,
+        Effect.DELETE_PERMANENT,
+        Effect.EXEC,
+        Effect.INSTALL,
+        Effect.PAYMENT,
+        Effect.PUBLISH,
+        Effect.SEND_MESSAGE,
+        Effect.CREDENTIALS,
+        Effect.SYSTEM_CONFIG,
+        Effect.INPUT_CONTROL,
+        Effect.REMOTE,
+    }
+)
+
+
+class Risk(StrEnum):
+    """How much a failed or misjudged run can cost.
+
+    Not a synonym for "effects": reading a window title is `READ` even though it
+    touches the desktop, and setting the volume is `REVERSIBLE` even though it
+    changes the machine, because it can be put back.
+    """
+
+    READ = "read"                 # observes, changes nothing
+    REVERSIBLE = "reversible"     # changes something that can be put back
+    DISRUPTIVE = "disruptive"     # interrupts the person's work
+    IRREVERSIBLE = "irreversible" # cannot be undone
+
+    @property
+    def mutating(self) -> bool:
+        """Whether a run of this is expected to change the world at all."""
+        return self is not Risk.READ
+
+
+class Permission(StrEnum):
+    """What a capability needs to be allowed to touch.
+
+    Deliberately **not** a description of the effect. ``FILES`` does not say
+    whether a name is being read or a directory permanently deleted; ``PROCESS``
+    does not say whether a list is being taken or a program killed. Effects are
+    declared separately and explicitly, because inferring one from the other is
+    how a delete gets gated like a read.
+    """
+
+    NONE = "none"
+    SYSTEM_READ = "system.read"
+    AUDIO = "audio"
+    DESKTOP = "desktop"           # windows, monitors, input
+    PROCESS = "process"           # start or stop programs
+    FILES = "files"
+    NETWORK = "network"
+
+
 class CapabilityError(GarisError):
     """A failure with a type attached, raised where raising is the honest move."""
 
@@ -266,9 +374,67 @@ class ExecutionContext:
     cancelled: Callable[[], bool] = lambda: False
     progress: Callable[[ProgressEvent], None] = lambda _: None
     runtime_profile: RuntimeProfile = RuntimeProfile.PRODUCTION
+    #: The invocation this one was started from, when a tool reached for another
+    #: tool. Recorded so a tree of effects can be read back as a tree rather than
+    #: as an unordered pile that all shares one task id.
+    parent_effect_id: str = ""
+    depth: int = 0
 
     def say(self, message: str, *, silent: bool = True) -> None:
         self.progress(ProgressEvent(message, silent=silent))
+
+
+#: How deep tools may call tools. A tool that reaches for a tool is legitimate;
+#: a cycle of them is a runaway that would otherwise only stop when the database
+#: filled up. The number is arbitrary and deliberately small — nothing in this
+#: codebase nests more than twice.
+MAX_NESTING_DEPTH = 8
+
+
+# --------------------------------------------------------------- policy input
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyEstimate:
+    """What an operation is expected to cost, computed before policy runs.
+
+    Normalised here so ``PolicyEngine`` never calls back into a ``ToolSpec``
+    method: once a subject exists, policy reads data and nothing else. The
+    adapter that built the subject is the only thing that knew how to ask.
+    """
+
+    duration_seconds: float | None = None
+    cost: float | None = None
+    affected_items: int | None = None
+    bytes_moved: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class PolicySubject:
+    """One thing policy can be asked about, whatever layer it came from.
+
+    Data only. No handler, no executor, no registry, no runtime object — a
+    subject can be logged, compared and constructed in a test without dragging
+    the machinery that produced it. ``source`` says which adapter built it, so a
+    denial can name the layer without policy having to branch on type.
+    """
+
+    id: str
+    risk: Risk
+    permissions: tuple[Permission, ...]
+    requires_approval: bool
+    source: str                       # "legacy_tool" | "capability"
+    name: str = ""
+    category: str = "general"
+    effects: frozenset[Effect] = frozenset()
+    reversible: bool = True
+    trusted_source: bool = True
+    danger_note: str = ""
+
+    @property
+    def effectful(self) -> bool:
+        """Whether this changes the world, from declared metadata alone."""
+        return bool(self.effects & EFFECTFUL) or not self.reversible
 
 
 # --------------------------------------------------------------------- targets
@@ -409,14 +575,21 @@ class TaskSnapshot:
 
 
 __all__ = [
+    "EFFECTFUL",
+    "MAX_NESTING_DEPTH",
     "MAX_SUMMARY_CHARS",
     "SECRET_HINTS",
     "CapabilityError",
     "CapabilityTarget",
+    "Effect",
     "EvidenceRecord",
     "ExecutionContext",
     "Failure",
+    "Permission",
+    "PolicyEstimate",
+    "PolicySubject",
     "ProgressEvent",
+    "Risk",
     "RuntimeEvent",
     "RuntimeProfile",
     "StepTarget",

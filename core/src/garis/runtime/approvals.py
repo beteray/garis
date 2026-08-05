@@ -78,7 +78,27 @@ class ApprovalBroker:
         *,
         redacted_params: dict[str, Any] | None = None,
     ) -> ApprovalRequest:
-        """Open a pending approval, or return the one already waiting for it."""
+        """Compatibility adapter over :meth:`request_for`."""
+        return self.request_for(
+            action, verdict,
+            effects=tuple(sorted(e.value for e in spec.effects)),
+            redacted_params=redacted_params,
+        )
+
+    def request_for(
+        self,
+        action: Action,
+        verdict: Verdict,
+        *,
+        effects: tuple[str, ...] = (),
+        redacted_params: dict[str, Any] | None = None,
+    ) -> ApprovalRequest:
+        """Open a pending approval, or return the one already waiting for it.
+
+        Takes the effects as values rather than a ``ToolSpec`` so a native
+        capability asks the same question, through the same broker, and its
+        stored yes matches by the same fingerprint.
+        """
         fingerprint = action.fingerprint()
         existing = self.db.one(
             "SELECT * FROM approvals WHERE fingerprint = ? AND state = ? "
@@ -96,7 +116,7 @@ class ApprovalBroker:
             state=ApprovalState.PENDING,
             requested_at=time.time(),
             task_id=action.task_id,
-            effects=tuple(sorted(e.value for e in spec.effects)),
+            effects=effects,
             params=redacted_params if redacted_params is not None else dict(action.params),
         )
         self.db.execute(

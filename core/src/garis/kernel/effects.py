@@ -122,26 +122,52 @@ class EffectStore:
         racing for the same effect resolve in SQLite rather than in Python, and
         the loser reads the winner's row.
         """
+        with self.db.transaction() as conn:
+            return self.reserve_in(
+                conn, effect_id, capability_id=capability_id, task_id=task_id,
+                step_key=step_key, args=args,
+            )
+
+    def reserve_in(
+        self,
+        conn: Any,
+        effect_id: str,
+        *,
+        capability_id: str,
+        task_id: str = "",
+        step_key: str = "",
+        args: Mapping[str, Any] | None = None,
+    ) -> EffectReservation:
+        """Claim inside a caller's transaction, so the reservation and the event
+        announcing it either both land or neither does."""
         fingerprint = arguments_hash(args or {})
         now = time.time()
 
-        with self.db.transaction() as conn:
-            row = conn.execute(
-                "SELECT * FROM effects WHERE effect_id = ?", (effect_id,)
-            ).fetchone()
-            if row is not None:
-                existing = _record(row)
-                if existing.arguments_hash and existing.arguments_hash != fingerprint:
-                    # The same id for a different act. Refusing is the only safe
-                    # answer: replaying would return someone else's result, and
-                    # proceeding would perform an effect under a used identity.
-                    raise CapabilityError(
-                        Failure.INVALID_INPUT,
-                        f"efekt {effect_id!r} został już zarezerwowany dla innych "
-                        f"argumentów tej samej zdolności",
-                    )
+        row = conn.execute(
+            "SELECT * FROM effects WHERE effect_id = ?", (effect_id,)
+        ).fetchone()
+        if row is not None:
+            existing = _record(row)
+            if existing.arguments_hash and existing.arguments_hash != fingerprint:
+                # The same id for a different act. Refusing is the only safe
+                # answer: replaying would return someone else's result, and
+                # proceeding would perform an effect under a used identity.
+                raise CapabilityError(
+                    Failure.INVALID_INPUT,
+                    f"efekt {effect_id!r} został już zarezerwowany dla innych "
+                    f"argumentów tej samej zdolności",
+                )
+            if not existing.repeatable:
                 return EffectReservation(granted=False, record=existing)
-
+            # A failure is not an effect. Re-claiming the row rather than
+            # inserting a second one keeps one identity per intended act, so the
+            # retry and the attempt that failed are visibly the same thing.
+            conn.execute(
+                "UPDATE effects SET state = ?, reserved_at = ?, settled_at = NULL,"
+                " outcome = NULL, reason = '' WHERE effect_id = ?",
+                (EffectState.RESERVED.value, now, effect_id),
+            )
+        else:
             try:
                 conn.execute(
                     "INSERT INTO effects(effect_id, task_id, step_key, capability_id,"
@@ -183,6 +209,34 @@ class EffectStore:
         """It may have happened. Say so, and stop anything from retrying it."""
         self._settle(effect_id, EffectState.UNCERTAIN, reason=reason)
 
+    def settle_in(
+        self,
+        conn: Any,
+        effect_id: str,
+        *,
+        ok: bool,
+        outcome: Mapping[str, Any] | None = None,
+        evidence: Sequence[EvidenceRecord] = (),
+        reason: str = "",
+        uncertain: bool = False,
+    ) -> EffectState:
+        """Settle inside a caller's transaction.
+
+        This is what makes "an effect is never successful before its evidence
+        committed" true rather than intended: the state, the evidence and the
+        event that announces them go in together, and a failure anywhere in the
+        transaction leaves the effect unsettled — which the startup sweep then
+        reads as uncertain, correctly.
+        """
+        state = (
+            EffectState.UNCERTAIN if uncertain
+            else EffectState.DONE if ok
+            else EffectState.FAILED
+        )
+        self._write(conn, effect_id, state, outcome=outcome, evidence=evidence,
+                    reason=reason)
+        return state
+
     def _settle(
         self,
         effect_id: str,
@@ -193,20 +247,33 @@ class EffectStore:
         reason: str = "",
     ) -> None:
         with self.db.transaction() as conn:
-            conn.execute(
-                "UPDATE effects SET state = ?, outcome = ?, evidence = ?, reason = ?,"
-                " settled_at = ? WHERE effect_id = ?",
-                (
-                    state.value,
-                    json.dumps(outcome, ensure_ascii=False, default=repr)
-                    if outcome is not None else None,
-                    json.dumps([e.to_dict() for e in evidence], ensure_ascii=False,
-                               default=repr),
-                    reason,
-                    time.time(),
-                    effect_id,
-                ),
-            )
+            self._write(conn, effect_id, state, outcome=outcome, evidence=evidence,
+                        reason=reason)
+
+    def _write(
+        self,
+        conn: Any,
+        effect_id: str,
+        state: EffectState,
+        *,
+        outcome: Mapping[str, Any] | None = None,
+        evidence: Sequence[EvidenceRecord] = (),
+        reason: str = "",
+    ) -> None:
+        conn.execute(
+            "UPDATE effects SET state = ?, outcome = ?, evidence = ?, reason = ?,"
+            " settled_at = ? WHERE effect_id = ?",
+            (
+                state.value,
+                json.dumps(outcome, ensure_ascii=False, default=repr)
+                if outcome is not None else None,
+                json.dumps([e.to_dict() for e in evidence], ensure_ascii=False,
+                           default=repr),
+                reason,
+                time.time(),
+                effect_id,
+            ),
+        )
 
     # ------------------------------------------------------------------ reads
 

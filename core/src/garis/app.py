@@ -11,15 +11,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .agent import Planner, Verifier
+from .capabilities import REGISTRY as CAPABILITIES
+from .capabilities.native import NativeCapabilityExecutor
 from .config import Config, load_config
 from .conversation import Answer, Conversation
 from .crypto import SecretBox, load_or_create_master_key, subkey
 from .events import EventBus
+from .kernel.contracts import RuntimeProfile
+from .kernel.effects import EffectStore
+from .kernel.outbox import EventOutbox
 from .memory import MemoryService
 from .models import HealthMonitor, ModelRouter, ProviderPool, build_router
 from .net import HttpClient
 from .notifications import NotificationGate
 from .paths import Paths
+from .profiles import ProfileContents, check_requested_doubles, inspect, validate
 from .runtime import ApprovalBroker, AuditLog, LeaseManager, PolicyEngine, Runtime, ToolRegistry
 from .settings import SettingsService
 from .store import SCHEMA, Database
@@ -51,6 +57,8 @@ class Garis:
     settings: SettingsService
     providers: ProviderPool
     conversation: Conversation
+    profile: RuntimeProfile = RuntimeProfile.PRODUCTION
+    contents: ProfileContents | None = None
 
     async def start(self) -> None:
         """Begin the background work a long-lived GARIS needs.
@@ -111,7 +119,11 @@ def build(
     passphrase: str | None = None,
     include_fake: bool = False,
     tool_modules: tuple = DESKTOP_MODULES,
+    profile: RuntimeProfile = RuntimeProfile.PRODUCTION,
 ) -> Garis:
+    # Refused before anything is constructed, so a process that asked for a stub
+    # it may not have never gets far enough to answer a question with one.
+    check_requested_doubles(profile, include_fake)
     config, paths = load_config(home)
 
     master = load_or_create_master_key(paths.key_file, passphrase=passphrase)
@@ -130,11 +142,24 @@ def build(
     approvals = ApprovalBroker(db, bus)
     audit = AuditLog(db)
     leases = LeaseManager()
+    effects = EffectStore(db)
+    outbox = EventOutbox(db, bus)
     runtime = Runtime(
         registry=registry, policy=policy, approvals=approvals, audit=audit,
         leases=leases, bus=bus, paths=paths, config=config, db=db,
-        vault=vault, memory=memory, http=http,
+        vault=vault, memory=memory, http=http, effects=effects, outbox=outbox,
+        profile=profile,
     )
+    # Both kinds of target now reach the same envelope: the runtime registered
+    # the legacy executor when it built the runner, and this adds the native one.
+    runtime.runner.register_executor(
+        "capability", NativeCapabilityExecutor(CAPABILITIES)
+    )
+    CAPABILITIES.bind(runtime.runner)
+
+    # Anything reserved and never settled is the footprint of a process that
+    # died mid-action. It comes back as uncertain, not as free to retry.
+    effects.sweep_unsettled()
 
     health = HealthMonitor(http=http, bus=bus)
     router = build_router(config, vault=vault, http=http, bus=bus,
@@ -154,12 +179,20 @@ def build(
     notifications = NotificationGate(config.notifications, bus=bus)
     voice = VoiceService(config=config.voice, bus=bus, router=router)
 
+    # Startup validation, not a promise in a docstring: a PRODUCTION process
+    # that ended up holding a stub provider or a fixture capability refuses to
+    # start rather than answering questions with one.
+    contents = validate(
+        inspect(profile, providers=router.providers, capabilities=CAPABILITIES.all())
+    )
+
     return Garis(
         paths=paths, config=config, bus=bus, db=db, vault=vault, memory=memory,
         http=http, registry=registry, runtime=runtime, router=router,
         planner=planner, verifier=verifier, tasks=tasks,
         notifications=notifications, voice=voice, settings=settings,
         providers=providers, conversation=conversation,
+        profile=profile, contents=contents,
     )
 
 

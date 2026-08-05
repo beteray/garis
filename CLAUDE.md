@@ -5,9 +5,12 @@ zasady architektury i pułapki, w które już wpadliśmy.
 
 ## Nienaruszalne zasady
 
-1. Nic nie wykonuje się poza `Runtime.perform()`. Narzędzie wołające narzędzie
-   używa `ctx.perform()`. Zero `subprocess` w agencie i zadaniach.
-2. Efekty deklaruje `ToolSpec`, nie wołający.
+1. Nic nie wykonuje się poza `CapabilityRunner`. `Runtime.perform()` jest fasadą
+   zgodności i sam nie robi polityki, zgód, audytu, efektów ani zdarzeń.
+   Narzędzie wołające narzędzie używa `ctx.perform()` — to rekurencja przez tę
+   samą kopertę, z własnym kluczem kroku. Zero `subprocess` w agencie i zadaniach.
+2. Efekty deklaruje `ToolSpec` albo `Capability`, nie wołający. `Permission` nie
+   jest skutkiem: `FILES` nie mówi, czy czytamy nazwę, czy kasujemy katalog.
 3. Osobowość nie ma ścieżki do `PolicyEngine`.
 4. Poświadczenia nigdy nie są pamięcią — zawsze sejf i `vault://`.
 5. Warstwa niżej nie importuje wyższej (`models` nie wie o `agent`).

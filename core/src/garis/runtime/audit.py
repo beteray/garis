@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import time
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -116,18 +117,55 @@ class AuditLog:
         duration_ms: int = 0,
     ) -> int:
         effects = sorted(e.value for e in spec.effects) if spec else []
-        cur = self.db.execute(
+        with self.db.transaction() as conn:
+            return self.stage(
+                conn,
+                task_id=action.task_id,
+                tool=action.tool,
+                intent=action.intent,
+                effects=effects,
+                decision=verdict.decision.value,
+                rule=verdict.rule,
+                params=action.params,
+                outcome=outcome,
+                detail=detail,
+                duration_ms=duration_ms,
+            )
+
+    def stage(
+        self,
+        conn: Any,
+        *,
+        task_id: str | None,
+        tool: str,
+        intent: str,
+        effects: Sequence[str],
+        decision: str,
+        rule: str | None,
+        params: Any,
+        outcome: str,
+        detail: str = "",
+        duration_ms: int = 0,
+    ) -> int:
+        """Write the audit row **inside a caller's transaction**.
+
+        The runner settles the effect, records what it decided and stages the
+        event that announces both in one transaction. Splitting them would let a
+        crash leave an effect marked done with nothing saying why, or an audit
+        row for a settlement that rolled back.
+        """
+        cur = conn.execute(
             "INSERT INTO audit(at, task_id, tool, intent, effects, decision, rule, params,"
             " outcome, detail, duration_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 time.time(),
-                action.task_id,
-                action.tool,
-                action.intent,
-                dumps(effects),
-                verdict.decision.value,
-                verdict.rule,
-                dumps(redact(action.params)),
+                task_id,
+                tool,
+                intent,
+                dumps(list(effects)),
+                decision,
+                rule,
+                dumps(redact(params)),
                 outcome,
                 detail[:2000] if detail else None,
                 duration_ms,

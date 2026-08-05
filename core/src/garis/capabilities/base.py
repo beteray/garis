@@ -37,34 +37,12 @@ from __future__ import annotations
 import sys
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Any
 
-
-class Risk(StrEnum):
-    """How much a failed or misjudged run can cost.
-
-    Not a synonym for "effects": reading a window title is `READ` even though it
-    touches the desktop, and setting the volume is `REVERSIBLE` even though it
-    changes the machine, because it can be put back.
-    """
-
-    READ = "read"                 # observes, changes nothing
-    REVERSIBLE = "reversible"     # changes something that can be put back
-    DISRUPTIVE = "disruptive"     # interrupts the person's work
-    IRREVERSIBLE = "irreversible" # cannot be undone
-
-
-class Permission(StrEnum):
-    """What the capability needs to be allowed to touch."""
-
-    NONE = "none"
-    SYSTEM_READ = "system.read"
-    AUDIO = "audio"
-    DESKTOP = "desktop"           # windows, monitors, input
-    PROCESS = "process"           # start or stop programs
-    FILES = "files"
-    NETWORK = "network"
+# Risk, Permission and Effect live in the kernel: the policy layer has to read
+# all three and cannot import this package. Re-exported so `from
+# garis.capabilities import Risk` keeps working.
+from ..kernel.contracts import Effect, Permission, Risk
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +116,15 @@ class Capability:
     permission: Permission
     executor: Executor
     verifier: Verifier
+    #: What this does to the world, declared — never inferred from `permission`
+    #: or `risk`. `Permission.FILES` does not say whether a name is being read
+    #: or a directory permanently deleted; `Permission.PROCESS` does not say
+    #: whether a list is being taken or a program killed. Gating a delete like a
+    #: read is exactly the mistake the split prevents.
+    effects: frozenset[Effect] = frozenset()
+    #: Whether the change can be put back. Separate from `risk`, which is about
+    #: cost rather than about undo.
+    reversible: bool = True
     inputs: tuple[Field, ...] = ()
     outputs: tuple[Field, ...] = ()
     #: The fields the verifier requires in `Outcome.evidence`. A capability with
@@ -150,6 +137,9 @@ class Capability:
     #: exposes everything the moment it exists is a bigger attack surface than
     #: the tool registry it was meant to discipline.
     exposed: bool = False
+    #: A stand-in, registered by tests. PRODUCTION refuses to start with one of
+    #: these present — by identity, not by counting classes.
+    fixture: bool = False
 
     def supported_here(self) -> bool:
         return sys.platform in self.platforms
@@ -251,6 +241,7 @@ def evidence_verifier(note: str = "Sprawdziłem wynik po fakcie.") -> Verifier:
 
 __all__ = [
     "Capability",
+    "Effect",
     "Executor",
     "Field",
     "Invocation",

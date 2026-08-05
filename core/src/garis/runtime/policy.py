@@ -22,9 +22,49 @@ from enum import StrEnum
 from typing import Any
 
 from ..config import AutonomyConfig
+from ..kernel.contracts import Effect, Permission, PolicyEstimate, PolicySubject, Risk
 from ..paths import Paths
-from .action import Action, Effect
+from .action import Action
 from .registry import ToolSpec
+
+
+def subject_from_tool(spec: ToolSpec) -> PolicySubject:
+    """A legacy tool, said in the words policy speaks.
+
+    Risk is derived rather than declared because ``ToolSpec`` has never had the
+    field; it is read off the declared effects, which is the one source the
+    codebase already trusts for this question.
+    """
+    if not spec.reversible or spec.effects & {Effect.DELETE_PERMANENT, Effect.PAYMENT}:
+        risk = Risk.IRREVERSIBLE
+    elif spec.effects & {Effect.WRITE, Effect.EXEC, Effect.INSTALL, Effect.SYSTEM_CONFIG}:
+        risk = Risk.REVERSIBLE
+    else:
+        risk = Risk.READ
+    return PolicySubject(
+        id=spec.name,
+        name=spec.name,
+        category=spec.category,
+        risk=risk,
+        permissions=(),
+        effects=spec.effects,
+        reversible=spec.reversible,
+        requires_approval=False,
+        trusted_source=spec.trusted_source,
+        danger_note=spec.danger_note,
+        source="legacy_tool",
+    )
+
+
+def estimate_for_tool(spec: ToolSpec, params: dict[str, Any]) -> PolicyEstimate:
+    """Ask the tool what this will cost, once, before policy runs.
+
+    Deliberately on this side of the boundary: after normalisation ``PolicyEngine``
+    reads data and never calls a method on a spec, so nothing it gates on can
+    change between the decision and the act.
+    """
+    spec_bytes, spec_cost = spec.estimates(params)
+    return PolicyEstimate(cost=spec_cost, bytes_moved=spec_bytes)
 
 
 class Decision(StrEnum):
@@ -70,10 +110,23 @@ class PolicyEngine:
     # --------------------------------------------------------------- evaluate
 
     def evaluate(self, spec: ToolSpec, action: Action) -> Verdict:
-        effects = spec.effects
-        params = action.params
+        """Compatibility adapter. The rules live in :meth:`evaluate_subject`."""
+        return self.evaluate_subject(
+            subject_from_tool(spec), action, estimate_for_tool(spec, action.params)
+        )
 
-        deny = self._hard_deny(spec, action)
+    def evaluate_subject(
+        self,
+        subject: PolicySubject,
+        action: Action,
+        estimate: PolicyEstimate | None = None,
+    ) -> Verdict:
+        """The only place a gate is decided, for tools and capabilities alike."""
+        effects = subject.effects
+        params = action.params
+        estimate = estimate or PolicyEstimate()
+
+        deny = self._hard_deny(subject, action)
         if deny is not None:
             return deny
 
@@ -82,21 +135,36 @@ class PolicyEngine:
             return Verdict(
                 Decision.CONFIRM,
                 f"effect:{sorted(gated)[0]}",
-                self._effect_prompt(sorted(gated), spec, action),
+                self._effect_prompt(sorted(gated), subject, action),
                 reason=f"skutki wymagające zgody: {sorted(e.value for e in gated)}",
             )
 
-        if not spec.reversible or not action.reversible:
+        # The capability declared that a person must say yes. Kept after the
+        # effect gates so the prompt stays the specific one where there is one.
+        if subject.requires_approval:
+            return Verdict(
+                Decision.CONFIRM,
+                "declared",
+                self._sentence(
+                    action,
+                    f"Mam wykonać operację: {subject.name or subject.id}",
+                    subject.danger_note,
+                ),
+                reason="zdolność zadeklarowana jako wymagająca zgody",
+            )
+
+        if not subject.reversible or not action.reversible:
             return Verdict(
                 Decision.CONFIRM,
                 "irreversible",
                 self._sentence(
-                    action, "Ta operacja jest nieodwracalna", spec.danger_note
+                    action, "Ta operacja jest nieodwracalna", subject.danger_note
                 ),
                 reason="narzędzie zadeklarowane jako nieodwracalne",
             )
 
-        est_bytes, est_cost = self._estimates(spec, action)
+        est_bytes = max(estimate.bytes_moved, action.estimated_bytes)
+        est_cost = max(estimate.cost or 0.0, action.estimated_cost)
 
         if est_cost > self.autonomy.spend_notice_amount:
             return Verdict(
@@ -117,15 +185,15 @@ class PolicyEngine:
 
         if Effect.INSTALL in effects:
             free = est_cost <= 0
-            if not (self.autonomy.auto_install_free_software and spec.trusted_source
-                    and free and spec.reversible):
+            if not (self.autonomy.auto_install_free_software and subject.trusted_source
+                    and free and subject.reversible):
                 return Verdict(
                     Decision.CONFIRM,
                     "install",
                     self._sentence(
                         action,
                         f"Muszę zainstalować oprogramowanie ({_target_hint(params)})",
-                        spec.danger_note,
+                        subject.danger_note,
                     ),
                     reason="instalacja poza regułą automatyczną",
                 )
@@ -142,7 +210,7 @@ class PolicyEngine:
 
     # ------------------------------------------------------------- hard denies
 
-    def _hard_deny(self, spec: ToolSpec, action: Action) -> Verdict | None:
+    def _hard_deny(self, subject: PolicySubject, action: Action) -> Verdict | None:
         """Things GARIS refuses even with a yes, because they disable its own controls.
 
         This is not a general-purpose "dangerous command" blocklist — formatting a
@@ -150,13 +218,13 @@ class PolicyEngine:
         What is off-limits is GARIS quietly removing the parts of itself that keep
         it accountable: the master key, the vault, the audit trail, the gate list.
         """
-        mutating = spec.effects & {
+        mutating = subject.effects & {
             Effect.WRITE,
             Effect.DELETE_PERMANENT,
             Effect.EXEC,
             Effect.SYSTEM_CONFIG,
         }
-        if mutating and spec.category != "vault":
+        if mutating and subject.category != "vault":
             for value in _string_values(action.params):
                 target = _norm(value)
                 for protected in (
@@ -171,7 +239,7 @@ class PolicyEngine:
                             reason=f"próba modyfikacji własnych zabezpieczeń: {value}",
                         )
 
-        if spec.name == "config_set":
+        if subject.name == "config_set":
             key = str(action.params.get("key", ""))
             if key.startswith("autonomy.confirm_effects") or key.startswith("autonomy.allow"):
                 return Verdict(
@@ -192,14 +260,9 @@ class PolicyEngine:
                 continue  # unknown effect name in config: ignore, never fail closed-open
         return frozenset(configured) | NON_NEGOTIABLE_CONFIRM
 
-    def _estimates(self, spec: ToolSpec, action: Action) -> tuple[int, float]:
-        spec_bytes, spec_cost = spec.estimates(action.params)
-        return (
-            max(spec_bytes, action.estimated_bytes),
-            max(spec_cost, action.estimated_cost),
-        )
-
-    def _effect_prompt(self, effects: list[Effect], spec: ToolSpec, action: Action) -> str:
+    def _effect_prompt(
+        self, effects: list[Effect], subject: PolicySubject, action: Action
+    ) -> str:
         match effects[0]:
             case Effect.PAYMENT:
                 head = "Mam dokonać płatności"
@@ -213,7 +276,7 @@ class PolicyEngine:
                 head = "Mam trwale usunąć te dane"
             case _:
                 head = f"Mam wykonać operację: {effects[0].label_pl}"
-        return self._sentence(action, head, spec.danger_note)
+        return self._sentence(action, head, subject.danger_note)
 
     def _sentence(self, action: Action, head: str, note: str) -> str:
         detail = _target_hint(action.params)
@@ -284,6 +347,12 @@ __all__ = [
     "ALLOW",
     "NON_NEGOTIABLE_CONFIRM",
     "Decision",
+    "Permission",
     "PolicyEngine",
+    "PolicyEstimate",
+    "PolicySubject",
+    "Risk",
     "Verdict",
+    "estimate_for_tool",
+    "subject_from_tool",
 ]

@@ -1,6 +1,6 @@
-"""The catalogue of capabilities, and the one way to run one.
+"""The catalogue of capabilities. A list, not an engine.
 
-Two rules, both learned the hard way.
+Three rules, all learned the hard way.
 
 **Registration requires a verifier.** There is no default. A capability whose
 postcondition nobody has written must say so explicitly with
@@ -8,21 +8,32 @@ postcondition nobody has written must say so explicitly with
 unverified. Making the verifier optional is how "nothing checked this" becomes
 "verified" by omission.
 
-**Running goes through `perform`, never through the executor directly.** That is
-where the platform check, the argument validation, the evidence check and the
-verdict all happen. An executor called on its own can return `ok=True` and mean
-nothing by it; `perform` is what turns a return value into a claim someone may
-repeat to the user.
+**Registration requires declared effects for anything that mutates.** A
+capability that changes the world and says nothing about how gets gated like a
+read. `Permission` does not answer this: `FILES` covers reading a name and
+deleting a directory, `PROCESS` covers listing programs and killing one.
+
+**Running does not happen here.** It used to: this class had its own executor
+call, its own crash handling and its own in-memory idempotence dict, none of
+which had policy, an audit row or an effect that survived a restart. That was
+the second execution path. Now there is one, in
+:class:`~garis.runtime.runner.CapabilityRunner`, and this catalogue holds
+capabilities and answers questions about them.
 """
 
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any
 
 from ..errors import Unsupported
-from .base import Capability, Invocation, Outcome, Verdict
+from ..kernel.contracts import CapabilityTarget, ExecutionContext, Failure
+from ..runtime.action import Action
+from .base import Capability, Outcome, Verdict
+from .legacy_effects import migrate, needs_migration
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..runtime.runner import CapabilityRunner, RunnerResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +75,10 @@ class Performed:
 class CapabilityRegistry:
     def __init__(self) -> None:
         self._by_id: dict[str, Capability] = {}
-        #: Effects already performed, by id. A resumed workflow asks here before
-        #: acting: launching Discord twice because a crash landed between the
-        #: launch and the journal write is a real effect duplicated, not a retry.
-        self._performed: dict[str, Performed] = {}
+        #: Set by whoever assembles the process. The catalogue never builds one:
+        #: a registry that can construct its own runner, effect store and policy
+        #: engine is a second execution path wearing a different hat.
+        self.runner: CapabilityRunner | None = None
 
     # ------------------------------------------------------------- registering
 
@@ -77,8 +88,18 @@ class CapabilityRegistry:
             raise ValueError(
                 f"{capability.id}: wersja {existing.version} jest już zarejestrowana"
             )
+        if needs_migration(capability.risk, capability.effects):
+            # Written before effects were declarable. Kept running, loudly, until
+            # commit 4 removes the bridge and this becomes a registration error.
+            capability = replace(
+                capability, effects=migrate(capability.id, capability.risk)
+            )
         self._by_id[capability.id] = capability
         return capability
+
+    def bind(self, runner: CapabilityRunner) -> None:
+        """Attach the one envelope. Everything this catalogue can run, runs there."""
+        self.runner = runner
 
     def has(self, capability_id: str) -> bool:
         return capability_id in self._by_id
@@ -128,61 +149,80 @@ class CapabilityRegistry:
         args: dict[str, Any] | None = None,
         *,
         effect_id: str = "",
+        task_id: str = "",
+        step_key: str = "",
     ) -> Performed:
+        """Deprecated shim: run a capability through the bound runner.
+
+        Kept so the callers written against the old signature keep working while
+        they move to targets. It decides nothing — it builds an action, calls the
+        one envelope and translates the answer back into ``Performed``.
+        """
         capability = self.get(capability_id)
-
-        if not capability.supported_here():
-            return Performed(
-                capability.id,
-                capability.version,
-                Outcome(ok=False, error=(
-                    f"{capability.id} nie działa na tym systemie ({sys.platform}); "
-                    f"obsługiwane: {', '.join(capability.platforms)}"
-                )),
-                Verdict(ok=False, checked=True, note="Zdolność nieobsługiwana tutaj."),
-                effect_id,
+        if self.runner is None:
+            raise Unsupported(
+                f"Katalog zdolności nie jest podłączony do wykonawcy — "
+                f"{capability_id!r} nie ma jak się wykonać",
+                tool=capability_id,
             )
 
-        # An effect already performed is not performed again. The recorded
-        # result is returned as it stands, including its verdict: replaying it
-        # would be a second real change dressed up as idempotence.
-        if effect_id and effect_id in self._performed:
-            return self._performed[effect_id]
-
-        try:
-            checked_args = capability.validate(args or {})
-        except ValueError as exc:
-            return Performed(
-                capability.id,
-                capability.version,
-                Outcome(ok=False, error=str(exc)),
-                Verdict(ok=False, checked=True, note="Złe parametry — nic nie zrobiłem."),
-                effect_id,
-            )
-
-        invocation = Invocation(capability.id, checked_args, effect_id=effect_id)
-
-        try:
-            outcome = await capability.executor(invocation)
-        except Exception as exc:  # a crash is an outcome, not a surprise
-            # A capability that raised may still have changed something: it got
-            # far enough to fail. Neither success nor a clean failure — say so.
-            outcome = Outcome(
-                ok=False,
-                error=f"{type(exc).__name__}: {exc}",
-                uncertain=capability.risk is not None and capability.risk.value != "read",
-            )
-
-        verdict = await capability.verifier(invocation, outcome)
-        performed = Performed(capability.id, capability.version, outcome, verdict, effect_id)
-        if effect_id and outcome.ok:
-            self._performed[effect_id] = performed
-        return performed
+        action = Action(
+            tool=capability.id,
+            params=dict(args or {}),
+            task_id=task_id or None,
+            step_key=step_key or None,
+        )
+        context = ExecutionContext(
+            task_id=task_id, step_key=step_key, effect_id=effect_id,
+            runtime_profile=self.runner.profile,
+        )
+        result = await self.runner.run(CapabilityTarget(capability.id), action, context)
+        return _performed(capability, result)
 
     def forget_effects(self) -> None:
-        """For tests and for a fresh process. Effects are per-run, not durable —
-        durability belongs to the task journal, which already has it."""
-        self._performed.clear()
+        """Kept as a no-op for callers that still clear per-run state.
+
+        There is nothing to clear: effect identity is a row in the database now,
+        which is the whole point — an in-memory dict lost exactly the crash it
+        was supposed to survive.
+        """
+        return None
+
+
+def _performed(capability: Capability, result: RunnerResult) -> Performed:
+    """The runner's structured answer, in the shape this catalogue has returned
+    since the layer existed."""
+    verification = result.verification
+    note = verification.reason or result.error
+    if result.failure is Failure.UNSUPPORTED_PLATFORM:
+        return Performed(
+            capability.id, capability.version,
+            Outcome(ok=False, error=result.error),
+            Verdict(ok=False, checked=True, note="Zdolność nieobsługiwana tutaj."),
+            result.effect_id,
+        )
+    if result.failure is Failure.INVALID_INPUT and not result.replayed:
+        return Performed(
+            capability.id, capability.version,
+            Outcome(ok=False, error=result.error),
+            Verdict(ok=False, checked=True, note="Złe parametry — nic nie zrobiłem."),
+            result.effect_id,
+        )
+    outcome = Outcome(
+        ok=result.ok,
+        value=result.value,
+        evidence=result.evidence[0] if result.evidence else {},
+        error=result.error,
+        uncertain=result.uncertain,
+    )
+    return Performed(
+        capability.id, capability.version, outcome,
+        Verdict(
+            ok=verification.goal_met, checked=verification.checked, note=note,
+            missing=verification.unmet,
+        ),
+        result.effect_id,
+    )
 
 
 #: One registry, filled at import time by the modules under this package.

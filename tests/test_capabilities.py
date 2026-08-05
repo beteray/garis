@@ -25,8 +25,21 @@ from garis.capabilities import (
     always_unchecked,
     evidence_verifier,
 )
+from garis.capabilities.native import NativeCapabilityExecutor
 from garis.capabilities.processes import is_running
 from garis.errors import Unsupported
+
+
+def bind(registry: CapabilityRegistry, runner) -> CapabilityRegistry:
+    """Attach a catalogue to the one envelope, the way ``app.build`` does.
+
+    Defined here rather than imported from ``conftest``: pytest loads that file
+    as top-level ``conftest``, so ``from tests.conftest import ...`` hands back a
+    second copy of the module.
+    """
+    runner.register_executor("capability", NativeCapabilityExecutor(registry))
+    registry.bind(runner)
+    return registry
 
 
 def _capability(**over) -> Capability:
@@ -49,8 +62,8 @@ def _capability(**over) -> Capability:
 # ------------------------------------------------------------- the catalogue
 
 
-async def test_a_capability_runs_and_reports_what_it_proved() -> None:
-    registry = CapabilityRegistry()
+async def test_a_capability_runs_and_reports_what_it_proved(capability_runner) -> None:
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(_capability())
     # `evidence_verifier` looks the capability up in the shared registry, so the
     # local one has to be findable there too.
@@ -63,11 +76,11 @@ async def test_a_capability_runs_and_reports_what_it_proved() -> None:
     assert performed.to_dict()["evidence"] == {"seen": 1}
 
 
-async def test_missing_evidence_is_not_a_verified_result() -> None:
+async def test_missing_evidence_is_not_a_verified_result(capability_runner) -> None:
     async def run(_: Invocation) -> Outcome:
         return Outcome(ok=True, value={"done": True}, evidence={})   # nothing measured
 
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(_capability(id="test.silent", executor=run))
     REGISTRY.add(_capability(id="test.silent", executor=run))
 
@@ -78,8 +91,8 @@ async def test_missing_evidence_is_not_a_verified_result() -> None:
     assert performed.verdict.missing == ("seen",)
 
 
-async def test_a_capability_with_no_postcondition_says_so() -> None:
-    registry = CapabilityRegistry()
+async def test_a_capability_with_no_postcondition_says_so(capability_runner) -> None:
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(_capability(id="test.unchecked", verifier=always_unchecked, evidence=()))
 
     performed = await registry.perform("test.unchecked")
@@ -89,7 +102,7 @@ async def test_a_capability_with_no_postcondition_says_so() -> None:
     assert not performed.verdict.checked
 
 
-async def test_evidence_that_fails_its_own_check_is_refused() -> None:
+async def test_evidence_that_fails_its_own_check_is_refused(capability_runner) -> None:
     async def run(_: Invocation) -> Outcome:
         return Outcome(ok=True, evidence={"scanned": 0})
 
@@ -99,7 +112,7 @@ async def test_evidence_that_fails_its_own_check_is_refused() -> None:
         evidence=(Field("scanned", "int", "Ile odczytano",
                         check=lambda v: isinstance(v, int) and v > 0),),
     )
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(spec)
     REGISTRY.add(spec)
 
@@ -108,12 +121,14 @@ async def test_evidence_that_fails_its_own_check_is_refused() -> None:
     assert performed.verdict.missing == ("scanned",)
 
 
-async def test_an_executor_that_crashes_produces_neither_success_nor_silence() -> None:
+async def test_an_executor_that_crashes_produces_neither_success_nor_silence(
+    capability_runner,
+) -> None:
     async def boom(_: Invocation) -> Outcome:
         raise RuntimeError("bum")
 
     spec = _capability(id="test.boom", executor=boom, risk=Risk.REVERSIBLE)
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(spec)
     REGISTRY.add(spec)
 
@@ -125,7 +140,7 @@ async def test_an_executor_that_crashes_produces_neither_success_nor_silence() -
     assert performed.outcome.uncertain
 
 
-async def test_an_unsupported_platform_is_answered_before_anything_runs() -> None:
+async def test_an_unsupported_platform_is_answered_before_anything_runs(capability_runner) -> None:
     ran = {"count": 0}
 
     async def run(_: Invocation) -> Outcome:
@@ -134,7 +149,7 @@ async def test_an_unsupported_platform_is_answered_before_anything_runs() -> Non
 
     other = "linux" if sys.platform == "win32" else "win32"
     spec = _capability(id="test.elsewhere", executor=run, platforms=(other,))
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(spec)
 
     performed = await registry.perform("test.elsewhere")
@@ -144,7 +159,7 @@ async def test_an_unsupported_platform_is_answered_before_anything_runs() -> Non
     assert "nie działa na tym systemie" in performed.outcome.error
 
 
-async def test_bad_arguments_stop_before_the_executor() -> None:
+async def test_bad_arguments_stop_before_the_executor(capability_runner) -> None:
     ran = {"count": 0}
 
     async def run(_: Invocation) -> Outcome:
@@ -156,7 +171,7 @@ async def test_bad_arguments_stop_before_the_executor() -> None:
         executor=run,
         inputs=(Field("level", "int", "Poziom", required=True),),
     )
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(spec)
 
     performed = await registry.perform("test.args", {})
@@ -164,9 +179,9 @@ async def test_bad_arguments_stop_before_the_executor() -> None:
     assert "brakuje parametru" in performed.outcome.error
 
 
-async def test_unknown_capabilities_are_not_invented() -> None:
+async def test_unknown_capabilities_are_not_invented(capability_runner) -> None:
     with pytest.raises(Unsupported):
-        await CapabilityRegistry().perform("windows.nothing.here")
+        await bind(CapabilityRegistry(), capability_runner).perform("windows.nothing.here")
 
 
 def test_the_planner_menu_shows_only_what_is_exposed_and_supported() -> None:
@@ -190,7 +205,7 @@ def test_a_second_version_cannot_squat_on_a_registered_id() -> None:
 # ------------------------------------------------------------- effect identity
 
 
-async def test_the_same_effect_is_not_performed_twice() -> None:
+async def test_the_same_effect_is_not_performed_twice(capability_runner) -> None:
     """A resume after a crash must not repeat a real change."""
     runs = {"count": 0}
 
@@ -199,7 +214,7 @@ async def test_the_same_effect_is_not_performed_twice() -> None:
         return Outcome(ok=True, value={"run": runs["count"]}, evidence={"seen": 1})
 
     spec = _capability(id="test.once", executor=run, risk=Risk.IRREVERSIBLE)
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(spec)
     REGISTRY.add(spec)
 
@@ -210,7 +225,7 @@ async def test_the_same_effect_is_not_performed_twice() -> None:
     assert second.outcome.value == first.outcome.value
 
 
-async def test_a_failed_effect_may_be_attempted_again() -> None:
+async def test_a_failed_effect_may_be_attempted_again(capability_runner) -> None:
     """Refusing to retry a failure would strand the task; only success is final."""
     runs = {"count": 0}
 
@@ -221,7 +236,7 @@ async def test_a_failed_effect_may_be_attempted_again() -> None:
                        error="" if ok else "nie tym razem")
 
     spec = _capability(id="test.flaky", executor=flaky)
-    registry = CapabilityRegistry()
+    registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(spec)
     REGISTRY.add(spec)
 
@@ -233,8 +248,9 @@ async def test_a_failed_effect_may_be_attempted_again() -> None:
 # ---------------------------------------------------------------- processes
 
 
-async def test_the_process_list_measures_this_machine() -> None:
-    performed = await REGISTRY.perform("windows.process.list", {"limit": 500})
+async def test_the_process_list_measures_this_machine(capability_runner) -> None:
+    catalogue = bind(REGISTRY, capability_runner)
+    performed = await catalogue.perform("windows.process.list", {"limit": 500})
 
     assert performed.ok and performed.verified
     assert performed.outcome.evidence["scanned"] > 0
@@ -245,8 +261,8 @@ async def test_the_process_list_measures_this_machine() -> None:
     assert any("python" in name.lower() for name in names), names[:20]
 
 
-async def test_a_named_process_is_only_claimed_when_it_was_seen() -> None:
-    performed = await REGISTRY.perform(
+async def test_a_named_process_is_only_claimed_when_it_was_seen(capability_runner) -> None:
+    performed = await bind(REGISTRY, capability_runner).perform(
         "windows.process.list", {"name": "nie-ma-takiego-programu-2026"}
     )
 
@@ -256,8 +272,9 @@ async def test_a_named_process_is_only_claimed_when_it_was_seen() -> None:
     assert not is_running(performed.outcome.value, "nie-ma-takiego-programu-2026")
 
 
-async def test_asking_for_a_process_that_is_running_finds_it() -> None:
-    performed = await REGISTRY.perform("windows.process.list", {"name": "python"})
+async def test_asking_for_a_process_that_is_running_finds_it(capability_runner) -> None:
+    catalogue = bind(REGISTRY, capability_runner)
+    performed = await catalogue.perform("windows.process.list", {"name": "python"})
     assert performed.outcome.evidence["found"] is True
     assert is_running(performed.outcome.value, "python")
 
@@ -265,7 +282,7 @@ async def test_asking_for_a_process_that_is_running_finds_it() -> None:
 # ------------------------------------------------------- asking about a program
 
 
-async def test_the_process_reflexes_reach_a_real_reading(runtime) -> None:
+async def test_the_process_reflexes_reach_a_real_reading(runtime, capability_runner) -> None:
     """The two phrases a person actually types, answered without a model."""
     from garis.agent import reflex
     from garis.tools import system

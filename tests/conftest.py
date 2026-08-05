@@ -14,9 +14,14 @@ from pathlib import Path
 import pytest
 
 from garis import app as garis_app
+from garis.capabilities.native import NativeCapabilityExecutor
+from garis.capabilities.registry import CapabilityRegistry
 from garis.config import Config
 from garis.crypto import SecretBox, load_or_create_master_key, subkey
 from garis.events import EventBus
+from garis.kernel.contracts import RuntimeProfile
+from garis.kernel.effects import EffectStore
+from garis.kernel.outbox import EventOutbox
 from garis.memory import MemoryService
 from garis.paths import Paths
 from garis.runtime import (
@@ -29,6 +34,7 @@ from garis.runtime import (
     Runtime,
     ToolRegistry,
 )
+from garis.runtime.runner import CapabilityRunner
 from garis.store import SCHEMA, Database
 from garis.vault import Vault
 
@@ -190,13 +196,42 @@ def runtime(
         db=db,
         vault=vault,
         memory=memory,
+        profile=RuntimeProfile.TEST,
     )
+
+
+@pytest.fixture
+def capability_runner(
+    config: Config, paths: Paths, db: Database, bus: EventBus
+) -> CapabilityRunner:
+    """The one envelope, wired for capabilities and nothing else.
+
+    Built here rather than by the catalogue: a registry that can construct its
+    own runner, effect store and policy engine is a second execution path with a
+    different name on it.
+    """
+    return CapabilityRunner(
+        policy=PolicyEngine(config.autonomy, paths),
+        approvals=ApprovalBroker(db, bus),
+        audit=AuditLog(db),
+        effects=EffectStore(db),
+        outbox=EventOutbox(db, bus),
+        leases=LeaseManager(),
+        profile=RuntimeProfile.TEST,
+    )
+
+
+def bind(registry: CapabilityRegistry, runner: CapabilityRunner) -> CapabilityRegistry:
+    """Attach a catalogue to the envelope, the way ``app.build`` does."""
+    runner.register_executor("capability", NativeCapabilityExecutor(registry))
+    registry.bind(runner)
+    return registry
 
 
 @pytest.fixture
 def garis(home: Path) -> Iterator[garis_app.Garis]:
     """A whole GARIS on a temp home, with the fake provider standing in for cloud."""
-    instance = garis_app.build(include_fake=True)
+    instance = garis_app.build(include_fake=True, profile=RuntimeProfile.TEST)
     yield instance
     instance.close()
 

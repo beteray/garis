@@ -14,51 +14,13 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Any
 
-
-class Effect(StrEnum):
-    """What an action does to the world. Declared per tool."""
-
-    READ = "read"                      # inspect files, processes, screen text
-    WRITE = "write"                    # create or modify recoverable data
-    DELETE_PERMANENT = "delete_permanent"   # irreversible loss
-    EXEC = "exec"                      # run a program or script
-    INSTALL = "install"                # add or update software
-    NETWORK = "network"                # outbound traffic
-    PAYMENT = "payment"                # spend money
-    PUBLISH = "publish"                # make something publicly visible
-    SEND_MESSAGE = "send_message"      # speak as the user to another person
-    CREDENTIALS = "credentials"        # touch passwords, tokens, logins
-    SYSTEM_CONFIG = "system_config"    # registry, services, firewall, policies
-    INPUT_CONTROL = "input_control"    # drive mouse and keyboard
-    CAPTURE = "capture"                # screen, microphone, camera
-    ELEVATE = "elevate"                # require administrator rights
-    REMOTE = "remote"                  # act on another machine
-
-    @property
-    def label_pl(self) -> str:
-        return _EFFECT_LABELS_PL.get(self, self.value)
-
-
-_EFFECT_LABELS_PL: dict[Effect, str] = {
-    Effect.READ: "odczyt",
-    Effect.WRITE: "zapis",
-    Effect.DELETE_PERMANENT: "trwałe usunięcie",
-    Effect.EXEC: "uruchomienie programu",
-    Effect.INSTALL: "instalacja",
-    Effect.NETWORK: "połączenie sieciowe",
-    Effect.PAYMENT: "płatność",
-    Effect.PUBLISH: "publikacja",
-    Effect.SEND_MESSAGE: "wysłanie wiadomości",
-    Effect.CREDENTIALS: "dane logowania",
-    Effect.SYSTEM_CONFIG: "zmiana ustawień systemu",
-    Effect.INPUT_CONTROL: "sterowanie myszą i klawiaturą",
-    Effect.CAPTURE: "nagrywanie ekranu lub mikrofonu",
-    Effect.ELEVATE: "uprawnienia administratora",
-    Effect.REMOTE: "działanie na innym urządzeniu",
-}
+# `Effect` moved to the kernel when capabilities had to declare effects too:
+# both layers need the word and neither may import the other. Re-exported here
+# because every caller in this codebase, and every test, says
+# `from garis.runtime import Effect`.
+from ..kernel.contracts import Effect
 
 
 @dataclass(slots=True)
