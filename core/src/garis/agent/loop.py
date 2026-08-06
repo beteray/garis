@@ -167,7 +167,7 @@ class AgentLoop:
                 # Already done in an earlier life of this task.
                 evidence.append(
                     StepEvidence(
-                        tool=step.tool,
+                        target=step.target,
                         purpose=step.purpose,
                         ok=True,
                         expects=step.expects,
@@ -214,7 +214,7 @@ class AgentLoop:
             if result.ok:
                 evidence.append(
                     StepEvidence(
-                        tool=step.tool,
+                        target=step.target,
                         purpose=step.purpose,
                         ok=True,
                         expects=step.expects,
@@ -229,11 +229,11 @@ class AgentLoop:
                 index += 1
                 continue
 
-            failures.append(f"{step.tool}: {result.error}")
+            failures.append(f"{step.name}: {result.error}")
 
             if step.optional:
                 evidence.append(
-                    StepEvidence(step.tool, step.purpose, ok=False, skipped=True,
+                    StepEvidence(step.target, step.purpose, ok=False, skipped=True,
                                  error=result.error or "", expects=step.expects)
                 )
                 index += 1
@@ -252,7 +252,7 @@ class AgentLoop:
                     fresh = await self.planner.repair_plan(
                         goal,
                         failures=failures,
-                        done=[f"{e.tool}: {e.purpose}" for e in evidence if e.ok],
+                        done=[f"{e.name}: {e.purpose}" for e in evidence if e.ok],
                     )
                 except GarisError:
                     fresh = Plan()
@@ -270,7 +270,7 @@ class AgentLoop:
                     continue
 
             evidence.append(
-                StepEvidence(step.tool, step.purpose, ok=False,
+                StepEvidence(step.target, step.purpose, ok=False,
                              error=result.error or "nieznany błąd", expects=step.expects)
             )
             break
@@ -313,7 +313,12 @@ class AgentLoop:
 
         for attempt in range(attempts):
             action = Action(
-                tool=step.tool,
+                # `Action.tool` carries the identity of both kinds of step —
+                # capabilities have been writing their id here since commit 3,
+                # and `fingerprint()` (which matches a stored approval to the
+                # retry after a reboot) is built from it. Splitting that now
+                # would invalidate approvals the user has already answered.
+                tool=step.name,
                 params=dict(step.params),
                 intent=step.purpose or goal.text,
                 task_id=task_id,
@@ -324,11 +329,12 @@ class AgentLoop:
                 Topic.TASK_STEP,
                 task_id=task_id,
                 step=step.key,
-                tool=step.tool,
+                tool=step.name,
+                target=step.name,
                 purpose=step.purpose,
                 attempt=attempt + 1,
             )
-            result = await self.runtime.perform(action)
+            result = await self.runtime.perform_step(step.target, action)
             if result.ok:
                 break
             if not result.retryable:

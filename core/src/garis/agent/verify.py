@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..errors import GarisError
-from ..kernel import Verification
+from ..kernel import StepTarget, ToolTarget, Verification
 from ..models import Job, Message, ModelRouter, Need, Privacy
 from . import reflex
 from .goal import Goal, Plan
@@ -64,7 +64,7 @@ class StepEvidence:
     and the reason a postcondition check could not be written before.
     """
 
-    tool: str
+    target: StepTarget
     purpose: str
     ok: bool
     expects: str = ""
@@ -73,6 +73,26 @@ class StepEvidence:
     skipped: bool = False
     value: Any = None
     extras: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        """The identifier as text — for prose, reports and the model's prompt."""
+        return self.target.name
+
+    @property
+    def tool(self) -> str:
+        """The legacy tool name, and only that. Raises for a capability.
+
+        Same reason as `PlanStep.tool`: the tool-keyed checks below must not be
+        handed a capability id they cannot resolve. Until they key on `target`,
+        a capability reaching them is a bug and has to say so.
+        """
+        if isinstance(self.target, ToolTarget):
+            return self.target.tool
+        raise TypeError(
+            f"dowód dotyczy zdolności {self.target.name!r}, nie narzędzia; "
+            f"użyj .target albo .name"
+        )
 
 
 class Verifier:
@@ -92,8 +112,8 @@ class Verifier:
             first = required_failed[0]
             return Verification(
                 goal_met=False,
-                reason=f"Krok {first.tool} nie zakończył się poprawnie: {first.error[:200]}",
-                unmet=tuple(f"{e.tool}: {e.error[:120]}" for e in required_failed[:3]),
+                reason=f"Krok {first.name} nie zakończył się poprawnie: {first.error[:200]}",
+                unmet=tuple(f"{e.name}: {e.error[:120]}" for e in required_failed[:3]),
                 checked=True, checked_by="rules",
             )
 
@@ -125,7 +145,7 @@ class Verifier:
             "criteria": list(goal.criteria),
             "steps": [
                 {
-                    "tool": e.tool,
+                    "tool": e.name,
                     "purpose": e.purpose,
                     "expected": e.expects,
                     "result": e.summary[:1500],

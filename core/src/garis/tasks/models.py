@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from ..agent.goal import Goal, Plan
+from ..kernel.contracts import StepTarget, target_to_dict
 
 
 class TaskState(StrEnum):
@@ -138,7 +139,7 @@ class StepRecord:
     task_id: str
     step_key: str
     ordinal: int
-    tool: str
+    target: StepTarget
     params: dict[str, Any] = field(default_factory=dict)
     state: StepState = StepState.PENDING
     result: Any = None
@@ -147,12 +148,31 @@ class StepRecord:
     started_at: float | None = None
     finished_at: float | None = None
 
+    @property
+    def name(self) -> str:
+        return self.target.name
+
+    @property
+    def tool(self) -> str:
+        """Label, not key.
+
+        Unlike `PlanStep.tool` and `StepEvidence.tool`, this one answers for a
+        capability too — a journal row is something a person reads, and nothing
+        in the engine dispatches on it. The loud version belongs where logic
+        keys on the name; here it would only break the task list.
+        """
+        return self.name
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "step_key": self.step_key,
             "ordinal": self.ordinal,
-            "tool": self.tool,
+            # The window has read `tool` since 0.1.0 and keeps reading it: this
+            # is a label for a person, not a key for logic, so a capability's id
+            # belongs here too. `capability` says which kind it was.
+            "tool": self.name,
+            "capability": target_to_dict(self.target)["capability"],
             "state": self.state.value,
             "error": self.error,
             "attempts": self.attempts,

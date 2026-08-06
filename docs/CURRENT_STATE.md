@@ -30,7 +30,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 516 testów |
+| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 530 testów |
 | **Jedna koperta wykonania** — narzędzie i zdolność wchodzą w to samo `CapabilityRunner.run` | ✅ | `test_runner.py` — test strukturalny czyta źródło `Runtime.perform` |
 | Jedna decyzja polityki, jeden wpis audytu, jeden efekt na wywołanie | ✅ | `test_runner.py` — liczniki na prawdziwym `PolicyEngine` |
 | Odmowa polityki i odmowa użytkownika nie zostawiają śladu w świecie | ✅ | `test_effect_safety.py` |
@@ -68,7 +68,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 Ostatnie osiem wierszy jest tu po to, żeby brak był **widoczny w tej samej
 tabeli**, co reszta. Podsystem nieopisany nigdzie wygląda jak podsystem gotowy.
 
-Weryfikacja: `pytest` 516 zielonych (1 pominięty) · `ruff` czysto ·
+Weryfikacja: `pytest` 530 zielonych (1 pominięty) · `ruff` czysto ·
 `mypy` czysto (80 plików).
 
 **Przeładowanie i zdrowie dostawców sprawdzone też na żywo**, nie tylko testami:
@@ -138,7 +138,7 @@ wymagają maszyny z Windows 11.
 |---|---|---|
 | 1 | `git status`, commit | ✅ |
 | 2 | zależności | ✅ |
-| 3 | testy Python | ✅ 516 |
+| 3 | testy Python | ✅ 530 |
 | 4 | `ruff`, `mypy` | ✅ |
 | 5 | build frontendu | ✅ |
 | 6 | `cargo fmt --check` | ✅ |

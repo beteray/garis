@@ -30,6 +30,7 @@ from garis.agent.goal import Plan, PlanStep
 from garis.agent.report import build_report
 from garis.agent.verify import StepEvidence, Verification
 from garis.config import Config, ModelsConfig
+from garis.kernel import ToolTarget
 from garis.models import ModelRouter
 from garis.models.providers.fake import FakeProvider, plan_reply, role_aware
 from garis.runtime import Runtime
@@ -160,8 +161,9 @@ async def test_verification_requires_a_verifier_that_ran() -> None:
 
     report = build_report(
         Goal("cokolwiek"),
-        Plan(steps=[PlanStep(key="a", tool="look")]),
-        [StepEvidence(tool="look", purpose="", ok=True, summary="ok", value={"seen": 1})],
+        Plan(steps=[PlanStep(key="a", target=ToolTarget("look"))]),
+        [StepEvidence(target=ToolTarget("look"), purpose="", ok=True, summary="ok",
+                     value={"seen": 1})],
         plain,
     )
     assert not report.verified
@@ -214,8 +216,9 @@ async def test_shell_success_does_not_prove_the_outcome(runtime, bus, config) ->
 async def test_no_template_says_checked_without_evidence() -> None:
     """13, at the source. The word is only reachable through a real check."""
     goal = Goal("cokolwiek")
-    evidence = [StepEvidence(tool="look", purpose="", ok=True, summary="x", value={"a": 1})]
-    plan = Plan(steps=[PlanStep(key="a", tool="look")])
+    evidence = [StepEvidence(target=ToolTarget("look"), purpose="", ok=True, summary="x",
+                              value={"a": 1})]
+    plan = Plan(steps=[PlanStep(key="a", target=ToolTarget("look"))])
 
     unchecked = build_report(goal, plan, evidence,
                              Verification(goal_met=True, reason="", checked_by="none"))

@@ -1,8 +1,24 @@
 # PlanStep → StepTarget — dokument projektowy migracji
 
-Status: **projekt, nie implementacja.** Ten plik powstał przed commitem 4 po to,
-żeby kontrakt był ustalony, zanim struktury zaczną się zmieniać w siedmiu
-miejscach naraz. Nic w kodzie nie zostało zmienione.
+Status: **Etap A wykonany**, etapy B i C przed nami. Ten plik powstał przed
+commitem 4 po to, żeby kontrakt był ustalony, zanim struktury zaczną się zmieniać
+w siedmiu miejscach naraz — i po ustaleniach §3.3 i §3.4 pozostaje wiążący.
+
+| Etap | Stan | Gdzie |
+|---|---|---|
+| A — model i zgodność | ✅ | `tests/test_step_target.py` |
+| B — przepięcie decyzji (`verify` → `report` → `reflex` → planner → CLI) | ⏳ | — |
+| C — usunięcie starego | ⏳ | — |
+
+Decyzje właściciela projektu, przyjęte przed Etapem A:
+
+- **§3.3** — jedna wspólna warstwa rozstrzygania kroku, wyprowadzona z logiki
+  `CapabilityRunner`. Żadnych osobnych implementacji w plannerze i w CLI.
+- **§3.4** — zgodność przejściowa: API na zewnątrz trzyma `tool: str`, silnik w
+  środku przechodzi na `StepTarget` i **głośno** przewraca się na ukrytym użyciu
+  starej ścieżki.
+- **`Action.target` nie powstaje.** `Action.tool` zostaje źródłem tożsamości
+  także dla zdolności.
 
 Numeracja etapów (A/B/C) jest wiążąca — kolejność wynika z zależności, nie z
 wygody.
@@ -319,7 +335,22 @@ dotyka. Skutek jest kosmetyczny dziś, groźny po R5. Do domknięcia razem z §3
 
 ## 6. Etapy
 
-### Etap A — model i zgodność, zero zmian zachowania
+### Etap A — model i zgodność, zero zmian zachowania ✅
+
+Zrobione. Odstępstwa od planu, które wyszły dopiero przy pisaniu kodu:
+
+- `Runtime.perform_step` przyjmuje `StepTarget`, **nie** `PlanStep` — `runtime`
+  leży poniżej `agent` i nie wolno mu go zaimportować. `Runtime.perform` jest
+  teraz napisana *przez* `perform_step`, więc kopertę woła dokładnie jedno
+  miejsce; test strukturalny tego pilnuje.
+- `StepRecord.tool` **nie** jest głośne. Wiersz dziennika to etykieta dla
+  człowieka i nic w silniku po niej nie rozgałęzia; głośna wersja zepsułaby
+  wyłącznie listę zadań. Głośne są `PlanStep.tool` i `StepEvidence.tool` — tam,
+  gdzie kluczuje logika.
+- `Plan.from_dict` dostał obsługę odrzuconych kroków (R4) już w Etapie A, bo
+  `target_from_dict` rzuca także na kroku pustym, a wcześniej `tool=""`
+  przechodziło do `_sanitise`.
+
 
 - `PlanStep.target: StepTarget` + `to_dict` / `from_dict` przez
   `target_to_dict` / `target_from_dict`

@@ -62,7 +62,7 @@ def build_report(
     skipped = [e for e in evidence if e.skipped]
 
     problems: list[str] = []
-    problems += [f"{e.tool}: {e.error[:160]}" for e in failed]
+    problems += [f"{e.name}: {e.error[:160]}" for e in failed]
     if verification.unmet:
         problems += list(verification.unmet)
 
@@ -101,7 +101,7 @@ def build_report(
         detail_lines.append("Założenia: " + "; ".join(plan.assumptions))
     for index, item in enumerate(evidence, start=1):
         mark = "—" if item.skipped else ("✓" if item.ok else "✗")
-        line = f"{mark} {index}. {item.tool}"
+        line = f"{mark} {index}. {item.name}"
         if item.purpose:
             line += f" — {item.purpose}"
         if item.ok and item.summary:
@@ -120,7 +120,9 @@ def build_report(
             "plan": plan.to_dict(),
             "steps": [
                 {
-                    "tool": e.tool,
+                    # The window and the audit view read this key. It stays a
+                    # string for both kinds of step; `capability` names which.
+                    "tool": e.name,
                     "ok": e.ok,
                     "skipped": e.skipped,
                     "error": e.error,

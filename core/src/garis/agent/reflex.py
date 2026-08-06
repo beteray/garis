@@ -31,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..kernel.contracts import ToolTarget
 from ..text import fold
 from .goal import Goal, Plan, PlanStep
 
@@ -453,7 +454,7 @@ def plan_for(goal: Goal | str, *, available: Callable[[str], bool] | None = None
         steps=[
             PlanStep(
                 key=reflex.name,
-                tool=reflex.tool,
+                target=ToolTarget(reflex.tool),
                 params=params,
                 purpose=reflex.purpose,
                 expects="zmierzone wartości",

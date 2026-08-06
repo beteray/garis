@@ -522,7 +522,7 @@ def test_a_structured_result_alone_cannot_make_a_report_verified() -> None:
     it has ever been allowed to mean."""
     goal = Goal(text="ustaw głośność na 30%")
     plan = Plan(steps=())
-    evidence = [StepEvidence(tool="safety.volume", purpose="ustaw", ok=True)]
+    evidence = [StepEvidence(target=ToolTarget("safety.volume"), purpose="ustaw", ok=True)]
 
     report = build_report(
         goal, plan, evidence,
@@ -534,7 +534,7 @@ def test_a_structured_result_alone_cannot_make_a_report_verified() -> None:
 
 def test_verified_is_exactly_the_three_facts_and_nothing_else() -> None:
     goal, plan = Goal(text="cel"), Plan(steps=())
-    evidence = [StepEvidence(tool="t", purpose="p", ok=True)]
+    evidence = [StepEvidence(target=ToolTarget("t"), purpose="p", ok=True)]
 
     for goal_met in (True, False):
         for checked in (True, False):

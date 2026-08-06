@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from ..agent.goal import Plan
+from ..kernel.contracts import StepTarget, target_from_dict, target_to_dict
 from ..runtime import ActionResult
 from ..store import Database, dumps, loads
 from .models import StepRecord, StepState, TaskRecord, TaskState
@@ -123,16 +124,18 @@ class TaskStore:
 
     # -------------------------------------------------------------------- steps
 
-    def step_started(self, task_id: str, step_key: str, ordinal: int, tool: str,
+    def step_started(self, task_id: str, step_key: str, ordinal: int, target: StepTarget,
                      params: dict[str, Any]) -> None:
         now = time.time()
+        columns = target_to_dict(target)
         self.db.execute(
-            "INSERT INTO task_steps(task_id, step_key, ordinal, tool, params, state,"
-            " attempts, started_at) VALUES (?,?,?,?,?,?,1,?)"
+            "INSERT INTO task_steps(task_id, step_key, ordinal, tool, capability, params,"
+            " state, attempts, started_at) VALUES (?,?,?,?,?,?,?,1,?)"
             " ON CONFLICT(task_id, step_key) DO UPDATE SET"
             " attempts = task_steps.attempts + 1, started_at = excluded.started_at,"
             " state = excluded.state",
-            (task_id, step_key, ordinal, tool, dumps(params), StepState.RUNNING.value, now),
+            (task_id, step_key, ordinal, columns["tool"], columns["capability"],
+             dumps(params), StepState.RUNNING.value, now),
         )
 
     def step_finished(self, task_id: str, step_key: str, result: ActionResult) -> None:
@@ -219,7 +222,7 @@ def _row_to_step(row: Any) -> StepRecord:
         task_id=row["task_id"],
         step_key=row["step_key"],
         ordinal=row["ordinal"],
-        tool=row["tool"],
+        target=target_from_dict({"tool": row["tool"], "capability": row["capability"]}),
         params=loads(row["params"], {}),
         state=StepState(row["state"]),
         result=loads(row["result"]),

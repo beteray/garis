@@ -37,7 +37,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (516 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (530 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -80,7 +80,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 516 passed
+.venv/bin/python -m pytest -q                 # 530 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -143,6 +143,14 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
     sprawdził (`checked`) · czy znamy wynik (`not uncertain`). Żadna trasa nie
     wyprowadza sukcesu zadania z samego `Outcome.ok`. `EffectState.DONE` znaczy
     „rozliczone zgodnie z prawdą", nie „użytkownik dostał, o co prosił".
+6c. **Krok wskazuje cel, nie string.** `PlanStep.target` i `StepEvidence.target`
+    to `StepTarget` — narzędzie albo zdolność, nigdy jedno udające drugie.
+    `.tool` **rzuca** dla zdolności zamiast zwrócić jej identyfikator, bo
+    `reflex.check()` szuka nazwy w zwykłym słowniku i przy nieznanej zwraca „nie
+    umiem sprawdzić", a nie wyjątek: cicha odpowiedź zamieniłaby zweryfikowany
+    sukces w raportowaną porażkę. Do prozy, logów i API służy `.name`, które
+    odpowiada dla obu rodzajów. Szczegóły:
+    `docs/PLANSTEP_STEP_TARGET_DESIGN.md`.
 7. **Cisza jest domyślna.** `ctx.progress()` do dziennika; `ctx.note()` tylko gdy
    człowiek naprawdę powinien to usłyszeć.
 8. **Raport buduje się z faktów** (`agent/report.py`), nie z modelu. Model nie
@@ -375,7 +383,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 516 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 530 testów, musi być zielone
 cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy

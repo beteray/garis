@@ -158,11 +158,22 @@ async def test_runtime_perform_decides_nothing_itself(runtime) -> None:
 
     from garis.runtime.executor import Runtime
 
-    body = inspect.getsource(Runtime.perform)
-    for forbidden in ("self.policy", "self.audit", "self.approvals", "self.effects",
-                      "self.leases", "self.bus.emit", "self.outbox"):
-        assert forbidden not in body, f"perform robi coś samo: {forbidden}"
-    assert "self.runner.run" in body
+    for name, method in (("perform", Runtime.perform), ("perform_step", Runtime.perform_step)):
+        body = inspect.getsource(method)
+        for forbidden in ("self.policy", "self.audit", "self.approvals", "self.effects",
+                          "self.leases", "self.bus.emit", "self.outbox"):
+            assert forbidden not in body, f"{name} robi coś samo: {forbidden}"
+
+    # Exactly one place in the façade reaches the runner. Two would be two paths
+    # again — the thing commit 3 removed — however similar they looked on the day
+    # the second one was written.
+    reaching = [
+        name for name, method in (("perform", Runtime.perform),
+                                  ("perform_step", Runtime.perform_step))
+        if "self.runner.run" in inspect.getsource(method)
+    ]
+    assert reaching == ["perform_step"], f"kopertę woła: {reaching}"
+    assert "self.perform_step" in inspect.getsource(Runtime.perform)
 
 
 async def test_a_legacy_tool_is_judged_once(runtime) -> None:

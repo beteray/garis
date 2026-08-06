@@ -43,7 +43,7 @@ class _StoreJournal:
         return self.store.completed_steps(task_id)
 
     def step_started(self, task_id: str, step: Any, ordinal: int) -> None:
-        self.store.step_started(task_id, step.key, ordinal, step.tool, step.params)
+        self.store.step_started(task_id, step.key, ordinal, step.target, step.params)
 
     def step_finished(self, task_id: str, step: Any, result: ActionResult) -> None:
         self.store.step_finished(task_id, step.key, result)

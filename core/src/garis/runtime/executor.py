@@ -26,7 +26,13 @@ from ..errors import (
     PolicyDenied,
 )
 from ..events import EventBus
-from ..kernel.contracts import ExecutionContext, Failure, RuntimeProfile, ToolTarget
+from ..kernel.contracts import (
+    ExecutionContext,
+    Failure,
+    RuntimeProfile,
+    StepTarget,
+    ToolTarget,
+)
 from ..kernel.effects import EffectStore
 from ..kernel.outbox import EventOutbox
 from ..net import HttpClient
@@ -105,8 +111,24 @@ class Runtime:
         Three steps, deliberately: build the target, run the envelope once,
         translate the answer. Nothing is decided here.
         """
+        return await self.perform_step(ToolTarget(action.tool), action, context)
+
+    async def perform_step(
+        self, target: StepTarget, action: Action, context: ExecutionContext | None = None
+    ) -> ActionResult:
+        """Run one action against an explicit target.
+
+        The same envelope as :meth:`perform`, entered by callers that already
+        know whether they are running a tool or a capability — the agent loop,
+        once plans carry targets. Not a second path: `perform` is now written in
+        terms of this one, so there is a single place where a target meets the
+        runner.
+
+        Takes a `StepTarget` rather than a plan step because `runtime` sits below
+        `agent` and may not import it.
+        """
         result = await self.runner.run(
-            ToolTarget(action.tool),
+            target,
             action,
             context or ExecutionContext(
                 task_id=action.task_id or "",

@@ -229,7 +229,7 @@ def describe_plan(plan: Plan) -> str:
     """Human-readable plan, used by the developer view and by `garis do --dry-run`."""
     lines = [plan.summary or "(bez opisu)"]
     for index, step in enumerate(plan.steps, start=1):
-        lines.append(f"{index}. {step.tool} — {step.purpose or step.expects or ''}".rstrip())
+        lines.append(f"{index}. {step.name} — {step.purpose or step.expects or ''}".rstrip())
     if plan.assumptions:
         lines.append("Założenia: " + "; ".join(plan.assumptions))
     if plan.notes:

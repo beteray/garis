@@ -249,6 +249,23 @@ SCHEMA: list[tuple[int, str]] = [
         ALTER TABLE effects ADD COLUMN verification TEXT;
         """,
     ),
+    (
+        5,
+        """
+        -- A step names a legacy tool or a native capability, never both. Two
+        -- columns rather than one polymorphic string, because "which kind is
+        -- this" must be answerable by looking, not by pattern-matching a name.
+        --
+        -- Existing rows keep `tool` and get an empty `capability`, and that is
+        -- the truth rather than a convenient default: when they were written no
+        -- capability could reach a plan at all.
+        --
+        -- `tool` stays. The window has read it since 0.1.0, SQLite does not drop
+        -- columns painlessly, and a finished task's journal is a record — not
+        -- something to rewrite because the vocabulary moved on.
+        ALTER TABLE task_steps ADD COLUMN capability TEXT NOT NULL DEFAULT '';
+        """,
+    ),
 ]
 
 VAULT_SCHEMA: list[tuple[int, str]] = [
