@@ -23,6 +23,9 @@ kompilowała się w ogóle.
 - `docs/IA_AND_DESIGN.md` — mapa ekranów, materiały szkła, responsywność, dostępność, budżety.
 - `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
 - `docs/KNOWN_ISSUES.md` — co blokuje i co już zamknięte.
+- `docs/PLANSTEP_STEP_TARGET_DESIGN.md` — kontrakt migracji `PlanStep` →
+  `StepTarget`, ustalony **przed** implementacją. Przeczytaj przed dotknięciem
+  `agent/goal.py`, `agent/verify.py` albo `task_steps`.
 - `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
 
 ## Kto prowadzi
