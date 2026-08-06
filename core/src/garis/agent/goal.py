@@ -13,12 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..errors import GarisError
-from ..kernel.contracts import (
-    StepTarget,
-    ToolTarget,
-    target_from_dict,
-    target_to_dict,
-)
+from ..kernel.contracts import StepTarget, target_from_dict, target_to_dict
 
 MAX_STEPS = 40
 
@@ -61,27 +56,14 @@ class PlanStep:
 
     @property
     def name(self) -> str:
-        """The identifier as text — for prose, logs and anything a model reads."""
-        return self.target.name
+        """The identifier as text — for prose, logs and anything a model reads.
 
-    @property
-    def tool(self) -> str:
-        """The legacy tool name, and only that.
-
-        Deliberately raises for a capability instead of returning its id. A
-        property that quietly answered `windows.process.list` here would let
-        name-keyed logic look up something it has never heard of and conclude
-        the result cannot be verified — a failure that is silent, survives the
-        type checker, and turns a checked success into a reported one that
-        failed. `reflex` keys on the target itself now; this stays loud for
-        whatever has not been converted yet. Callers wanting a label want `name`.
+        There is no `.tool` here any more. It existed as a transitional bridge
+        and was deliberately loud for capabilities; now that every check keys on
+        `target`, a name-shaped accessor would only invite the mistake back.
+        Dispatch on `target`, print `name`.
         """
-        if isinstance(self.target, ToolTarget):
-            return self.target.tool
-        raise TypeError(
-            f"krok {self.key!r} wskazuje zdolność {self.target.name!r}, nie narzędzie; "
-            f"użyj .target albo .name"
-        )
+        return self.target.name
 
     def to_dict(self) -> dict[str, Any]:
         return {

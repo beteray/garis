@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..errors import GarisError
-from ..kernel import StepTarget, ToolTarget, Verification
+from ..kernel import StepTarget, Verification
 from ..models import Job, Message, ModelRouter, Need, Privacy
 from . import reflex
 from .goal import Goal, Plan
@@ -76,24 +76,12 @@ class StepEvidence:
 
     @property
     def name(self) -> str:
-        """The identifier as text — for prose, reports and the model's prompt."""
-        return self.target.name
+        """The identifier as text — for prose, reports and the model's prompt.
 
-    @property
-    def tool(self) -> str:
-        """The legacy tool name, and only that. Raises for a capability.
-
-        Same reason as `PlanStep.tool`. The checks in this module key on
-        `target` now, so nothing here calls it — it stays loud for the callers
-        that still ask, because answering with a capability id would let one of
-        them look up a name no reflex has ever heard of.
+        Same as `PlanStep`: no `.tool`. `reflex.check` and `reflex.answer` take
+        the target itself, so nothing here needs a name to dispatch on.
         """
-        if isinstance(self.target, ToolTarget):
-            return self.target.tool
-        raise TypeError(
-            f"dowód dotyczy zdolności {self.target.name!r}, nie narzędzia; "
-            f"użyj .target albo .name"
-        )
+        return self.target.name
 
 
 class Verifier:

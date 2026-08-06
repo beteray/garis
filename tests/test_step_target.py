@@ -6,15 +6,14 @@ loads, and nothing outside the engine can tell the difference. Every test here
 guards one of the risks that document names — the ones that would otherwise be
 found months later, in a report that quietly said the wrong thing.
 
-The last section covers Etap B: the checks that used to key on a tool name now
-key on the target itself.
+Etap B added the checks that key on the target itself; Etap C removed the
+transitional `.tool` accessors entirely, which is what the structural tests here
+now guard.
 """
 
 from __future__ import annotations
 
 import sqlite3
-
-import pytest
 
 from garis.agent.goal import Goal, Plan, PlanStep
 from garis.agent.planner import Planner
@@ -78,37 +77,56 @@ def test_a_step_naming_nothing_is_dropped_with_a_reason() -> None:
     assert plan.notes, "krok bez celu zniknął bez słowa wyjaśnienia"
 
 
-# ------------------------------------------------- the loud compatibility edge
+# --------------------------------------------- the accessor that no longer is
 
 
-def test_reading_tool_off_a_capability_step_raises_rather_than_answering() -> None:
-    """The single most expensive silent failure this migration could produce.
+def test_a_step_has_no_tool_attribute_at_all() -> None:
+    """Etap C: the transitional accessor is gone, not merely discouraged.
 
-    `reflex.check` looks a tool name up in a plain dict and returns "I cannot
-    check this" for anything it does not recognise — it does not raise. So a
-    `.tool` that helpfully answered `windows.process.list` would turn a verified
-    success into a reported failure, with green tests and a clean type check.
+    It existed to be loud — reading `.tool` on a capability raised rather than
+    answering with its id, because `reflex.check` used to look names up in a
+    dict and return "I cannot check this" for a miss, silently turning a
+    measured success into a reported failure. Everything keys on `target` now,
+    so the accessor has no job left. Keeping it would only leave the mistake
+    reachable.
     """
     step = PlanStep(key="a", target=CapabilityTarget("windows.process.list"))
+    evidence = StepEvidence(target=ToolTarget("look"), purpose="", ok=True)
 
-    with pytest.raises(TypeError):
-        _ = step.tool
+    assert not hasattr(step, "tool")
+    assert not hasattr(evidence, "tool")
     assert step.name == "windows.process.list"
+    assert evidence.name == "look"
 
 
-def test_reading_tool_off_capability_evidence_raises_too() -> None:
-    evidence = StepEvidence(target=CapabilityTarget("windows.process.list"),
-                            purpose="odczyt", ok=True)
+def test_no_engine_code_reads_a_step_or_evidence_by_tool_name() -> None:
+    """Structural, so the accessor cannot come back by the side door.
 
-    with pytest.raises(TypeError):
-        _ = evidence.tool
-    assert evidence.name == "windows.process.list"
+    A helper that reconstructs a name and dispatches on it would rebuild exactly
+    the failure the target model removed, and would do it without touching any
+    of the files this migration changed.
+    """
+    import pathlib
+    import re
 
+    root = pathlib.Path(__file__).resolve().parent.parent / "core" / "src" / "garis"
+    # Scoped to the packages that actually hold plan steps and evidence. `cli.py`
+    # and `runtime/audit.py` also write `step.tool` and `e.tool`, but those names
+    # are bound to `StepRecord` and to an audit entry — the two string surfaces
+    # this migration deliberately keeps. Widening the scan would flag them and
+    # teach the next reader to weaken the check.
+    searched = [root / "agent", root / "tasks"]
+    forbidden = re.compile(r"\b(step|item|evidence|e)\.tool\b")
 
-def test_a_tool_step_still_answers_tool() -> None:
-    """The edge is loud only where it must be: legacy steps are untouched."""
-    assert PlanStep(key="a", target=ToolTarget("look")).tool == "look"
-    assert StepEvidence(target=ToolTarget("look"), purpose="", ok=True).tool == "look"
+    offenders = [
+        f"{path.relative_to(root)}:{n}"
+        for directory in searched
+        for path in directory.rglob("*.py")
+        for n, line in enumerate(path.read_text().splitlines(), start=1)
+        if forbidden.search(line)
+    ]
+
+    assert offenders == [], f"ktoś znowu kluczuje po nazwie: {offenders}"
 
 
 # ------------------------------------------------------------------ the record
