@@ -31,7 +31,9 @@ Twoje zadanie: zamienić CEL użytkownika w plan konkretnych wywołań narzędzi
 
 Zasady:
 1. Użytkownik mówi, jaki chce rezultat. Ty decydujesz jak. Nie pytaj o metodę.
-2. Używaj wyłącznie narzędzi z listy. Nie wymyślaj nazw ani parametrów.
+2. Używaj wyłącznie pozycji z listy. Nie wymyślaj nazw ani parametrów.
+   Lista ma dwie części: "tools" i "capabilities". Krok wskazuje ALBO
+   "tool", ALBO "capability" — nigdy oba naraz i nigdy żadnego.
 3. Plan musi być wykonalny od początku do końca bez udziału użytkownika.
 4. Najpierw rozpoznanie (odczyt stanu), potem zmiany. Nie zmieniaj czegoś,
    czego wcześniej nie sprawdziłeś.
@@ -50,7 +52,9 @@ Odpowiadaj WYŁĄCZNIE obiektem JSON o strukturze:
   "steps": [
     {{"key": "krotki-identyfikator", "tool": "nazwa_narzedzia",
       "params": {{}}, "purpose": "po co ten krok", "expects": "dobry wynik",
-      "optional": false}}
+      "optional": false}},
+    {{"key": "inny-krok", "capability": "identyfikator.zdolnosci",
+      "params": {{}}, "purpose": "po co", "expects": "dobry wynik"}}
   ],
   "question": ""
 }}
@@ -97,8 +101,14 @@ class Planner:
         return SYSTEM_PROMPT.format(max_steps=MAX_STEPS, language=self.language)
 
     def _catalog(self, goal: Goal) -> str:
-        """The tool menu. Only what exists, only what runs on this host."""
-        return json.dumps(self.registry.catalog_for_model(), ensure_ascii=False, indent=None)
+        """The menu. Only what exists, only what runs on this host.
+
+        Through the resolver, so tools and capabilities are offered by the same
+        thing that will later judge whether the chosen step can run. Two
+        catalogues answered by two different objects is how a planner ends up
+        scheduling something the validator then silently drops.
+        """
+        return json.dumps(self.resolver.menu(), ensure_ascii=False, indent=None)
 
     def _context_block(self, goal: Goal) -> str:
         parts: list[str] = []

@@ -24,7 +24,7 @@ kompilowała się w ogóle.
 - `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
 - `docs/KNOWN_ISSUES.md` — co blokuje i co już zamknięte.
 - `docs/PLANSTEP_STEP_TARGET_DESIGN.md` — kontrakt migracji `PlanStep` →
-  `StepTarget`, ustalony **przed** implementacją. Przeczytaj przed dotknięciem
+  `StepTarget` — zamknięta. Kontrakt ustalony **przed** implementacją; przeczytaj przed dotknięciem
   `agent/goal.py`, `agent/verify.py` albo `task_steps`.
 - `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
 
@@ -37,7 +37,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (541 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (553 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -81,7 +81,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 541 passed
+.venv/bin/python -m pytest -q                 # 553 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -120,13 +120,16 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
    runner raz i tłumaczy wynik; nie robi polityki, zgód, dzierżaw, audytu,
    trwałości ani zdarzeń. Narzędzie wołające narzędzie używa `ctx.perform()`:
    rekurencja przez tę samą kopertę, z własnym kluczem kroku i własnym efektem.
-   Zero bezpośrednich `subprocess` w agencie czy zadaniach.
+   Zero bezpośrednich `subprocess` w agencie czy zadaniach. `CapabilityRegistry`
+   jest katalogiem, nie silnikiem — nie ma metody, która cokolwiek uruchamia.
 2. **Efekty deklaruje `ToolSpec` albo `Capability`, nie wołający.** Dodajesz
    narzędzie, które wysyła wiadomość — deklarujesz `Effect.SEND_MESSAGE`, choćby
    to była „tylko notatka". `Permission` nie opisuje skutku i nigdy go nie
    zastępuje: `FILES` obejmuje odczyt nazwy i trwałe skasowanie katalogu,
    `PROCESS` obejmuje listowanie i zabicie procesu. Zgadywanie jednego z
-   drugiego to bramka odczytu założona na kasowanie.
+   drugiego to bramka odczytu założona na kasowanie. Zdolność, która zmienia
+   stan i nie deklaruje skutków, jest **odrzucana przy rejestracji**; `effects=
+   frozenset()` to poprawna odpowiedź dla odczytu, ale musi paść wprost.
 3. **Osobowość nie dotyka polityki.** `PolicyEngine` przyjmuje `autonomy` i `paths`.
    Koniec.
 4. **Poświadczenia nie są pamięcią.** Zawsze sejf, zawsze `vault://` w parametrach.
@@ -146,11 +149,12 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
     „rozliczone zgodnie z prawdą", nie „użytkownik dostał, o co prosił".
 6c. **Krok wskazuje cel, nie string.** `PlanStep.target` i `StepEvidence.target`
     to `StepTarget` — narzędzie albo zdolność, nigdy jedno udające drugie.
-    `.tool` **rzuca** dla zdolności zamiast zwrócić jej identyfikator, bo
-    `reflex.check()` szuka nazwy w zwykłym słowniku i przy nieznanej zwraca „nie
-    umiem sprawdzić", a nie wyjątek: cicha odpowiedź zamieniłaby zweryfikowany
-    sukces w raportowaną porażkę. Do prozy, logów i API służy `.name`, które
-    odpowiada dla obu rodzajów. Na pytanie „czy ten krok da się uruchomić"
+    `.tool` na kroku i na dowodzie **nie istnieje**: `reflex` kluczuje po celu,
+    a nazwa jako klucz zamieniłaby zweryfikowany sukces w raportowaną porażkę
+    (nietrafienie w słowniku zwraca „nie umiem sprawdzić", nie wyjątek). Do
+    prozy, logów i API służy `.name`. Napisem zostają wyłącznie trzy
+    powierzchnie zewnętrzne: `Action.tool`, `StepRecord.tool` i kolumna
+    `task_steps.tool`. Na pytanie „czy ten krok da się uruchomić"
     odpowiada **jedno** miejsce — `runtime/resolve.py` — a nie planner, CLI i
     runner osobno; trzy definicje wykonalności to trzy definicje, które się
     rozjadą. Resolver **nie wykonuje** i nie jest wystawionym krokiem runnera:
@@ -388,7 +392,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 541 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 553 testów, musi być zielone
 cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy

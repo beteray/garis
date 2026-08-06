@@ -1,6 +1,6 @@
 # PlanStep → StepTarget — dokument projektowy migracji
 
-Status: **Etapy A i B wykonane**, etap C przed nami. Ten plik powstał przed
+Status: **Etapy A, B i C wykonane.** Migracja zamknięta. Ten plik powstał przed
 commitem 4 po to, żeby kontrakt był ustalony, zanim struktury zaczną się zmieniać
 w siedmiu miejscach naraz — i po ustaleniach §3.3 i §3.4 pozostaje wiążący.
 
@@ -8,7 +8,7 @@ w siedmiu miejscach naraz — i po ustaleniach §3.3 i §3.4 pozostaje wiążąc
 |---|---|---|
 | A — model i zgodność | ✅ | `tests/test_step_target.py` |
 | B — przepięcie decyzji (reflex → verify → report → planner → CLI) | ✅ | `tests/test_target_resolver.py` |
-| C — usunięcie starego | ⏳ | — |
+| C — usunięcie starego | ✅ | `tests/test_capabilities.py`, `tests/test_step_target.py` |
 
 Decyzje właściciela projektu, przyjęte przed Etapem A:
 
@@ -19,7 +19,8 @@ Decyzje właściciela projektu, przyjęte przed Etapem A:
   i w CLI.
 - **§3.4** — zgodność przejściowa: API na zewnątrz trzyma `tool: str`, silnik w
   środku przechodzi na `StepTarget` i **głośno** przewraca się na ukrytym użyciu
-  starej ścieżki.
+  starej ścieżki. Etap C zdjął głośną właściwość razem z resztą przejściowego
+  rusztowania: nie ma czego wyciszać, gdy nie ma po czym kluczować.
 - **`Action.target` nie powstaje.** `Action.tool` zostaje źródłem tożsamości
   także dla zdolności.
 
@@ -157,7 +158,7 @@ R4.
 ```python
 target: StepTarget
 @property
-def tool(self) -> str: ...     # zgodność, patrz §3.4
+def name(self) -> str: ...     # etykieta; `.tool` zniknął w Etapie C
 ```
 
 ### 2.4 Czego świadomie **nie** wprowadzamy
@@ -398,13 +399,27 @@ polityka, księga efektów albo cokolwiek asynchronicznego.
 katalogu modelu jest teraz zmianą jednego miejsca, a nie skokiem na głęboką
 wodę.
 
-### Etap C — usunięcie starego
+### Etap C — usunięcie starego ✅
 
-- zdjęcie właściwości zgodnościowych `.tool` z `PlanStep` i `StepEvidence`
-- zdjęcie shimu `CapabilityRegistry.perform`
-- kolumna `task_steps.tool` **zostaje** (SQLite, API, historia)
+- `PlanStep.tool` i `StepEvidence.tool` **usunięte**. Nie zdeprecjonowane —
+  usunięte; głośna właściwość miała sens dopóki coś jeszcze kluczowało po
+  nazwie, a od Etapu B nic nie kluczuje.
+- `CapabilityRegistry.perform` **usunięte** razem z `forget_effects`. Żaden kod
+  produkcyjny go nie wołał; przetrwało, bo z nim testy były krótsze — dokładnie
+  tak druga ścieżka zostaje przy życiu. Tłumaczenie wyniku zostało jako
+  `performed_from()`, bo to tłumaczenie, nie wykonanie.
+- `capabilities/legacy_effects.py` **skasowane**. Zdolność zmieniająca stan bez
+  zadeklarowanych skutków jest odrzucana przy rejestracji. `windows.process.list`
+  deklaruje `effects=frozenset()` wprost.
+- Planner widzi oba katalogi przez `TargetResolver.menu()` i może wskazać
+  `capability`. Nadal nic nie wykonuje — pilnuje tego test strukturalny.
+- Kolumna `task_steps.tool`, `StepRecord.tool` i klucz `tool` w API **zostają**.
 
-**Warunek wejścia:** Etap B zamknięty i R1 rozstrzygnięte.
+**Czego Etap C nie zrobił:** filtrowania zdolności po trafności. `ToolSpec` ma
+kategorię, `Capability` nie — `menu(categories=…)` zawęża więc tylko narzędzia,
+a zdolności filtruje sam katalog do `exposed and supported_here`. Punkt
+rozszerzenia jest jeden i opisany w `resolve.py`; budowanie systemu selekcji
+byłoby osobnym zadaniem, nie sprzątaniem po migracji.
 
 ---
 

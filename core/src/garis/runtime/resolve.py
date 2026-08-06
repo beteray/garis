@@ -23,7 +23,7 @@ policy, no registry of its own and no way to run anything:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -32,7 +32,7 @@ from .registry import ToolRegistry
 
 
 class CapabilityCatalogue(Protocol):
-    """The two methods this layer needs from a capability catalogue.
+    """The three methods this layer needs from a capability catalogue.
 
     Structural, so `runtime` keeps its hands off `capabilities` — which imports
     this package and may not be imported back.
@@ -41,6 +41,8 @@ class CapabilityCatalogue(Protocol):
     def has(self, capability_id: str) -> bool: ...
 
     def get(self, capability_id: str) -> Any: ...
+
+    def catalogue(self) -> list[dict[str, Any]]: ...
 
 
 def _unresolvable(params: dict[str, Any]) -> dict[str, Any]:
@@ -92,6 +94,27 @@ class TargetResolver:
     def executable(self, target: StepTarget) -> bool:
         """Shorthand for the one question most callers have."""
         return self.resolve(target).executable
+
+    # ------------------------------------------------------------------- menu
+
+    def menu(self, categories: Iterable[str] | None = None) -> dict[str, Any]:
+        """What a planner may choose from. Descriptions and schemas, nothing live.
+
+        Two lists rather than one merged one, because the planner has to say
+        *which kind* it picked and a single list would make it guess. The
+        capability side is already filtered by the catalogue to what is exposed
+        and supported here — an unexposed capability still runs when this
+        codebase calls it by id, it is simply off the model's menu.
+
+        TODO: relevance filtering. `categories` narrows the tool side because
+        `ToolSpec` carries a category; `Capability` has no equivalent field yet,
+        so capabilities are offered whole. The parameter is the extension point —
+        when capabilities gain a category, filter them here and nowhere else.
+        """
+        return {
+            "tools": self.tools.catalog_for_model(categories),
+            "capabilities": self.capabilities.catalogue() if self.capabilities else [],
+        }
 
     # ------------------------------------------------------------------ kinds
 

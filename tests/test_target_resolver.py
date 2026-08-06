@@ -175,3 +175,45 @@ def test_the_resolver_cannot_run_anything() -> None:
     for forbidden in ("CapabilityRunner", "runner", "PolicyEngine", "EffectStore",
                       "await ", "async def"):
         assert forbidden not in code, f"resolver zaczął wykonywać: {forbidden}"
+
+
+# ------------------------------------------------------ Etap C: what a planner sees
+
+
+def test_the_menu_keeps_the_two_kinds_apart(tools, capabilities) -> None:
+    """One list would make the planner guess which kind it picked.
+
+    A step names a tool or a capability, never both — so the menu it chooses
+    from has to preserve that distinction rather than flatten it into names.
+    """
+    menu = TargetResolver(tools, capabilities).menu()
+
+    assert {"tools", "capabilities"} == set(menu)
+    assert {t["name"] for t in menu["tools"]} == {"look", "wipe"}
+    assert menu["capabilities"] == [], "test.measure nie jest wystawiona"
+
+
+def test_the_menu_offers_only_exposed_capabilities(tools) -> None:
+    """Unexposed still runs when this codebase calls it by id — just not on the menu."""
+    registry = CapabilityRegistry()
+    registry.add(_capability(id="test.public", exposed=True))
+    registry.add(_capability(id="test.internal", exposed=False))
+
+    menu = TargetResolver(tools, registry).menu()
+
+    assert [c["id"] for c in menu["capabilities"]] == ["test.public"]
+
+
+def test_a_resolver_without_capabilities_offers_none(tools) -> None:
+    assert TargetResolver(tools).menu()["capabilities"] == []
+
+
+def test_the_menu_carries_descriptions_not_executables(tools) -> None:
+    """Schemas and prose. Nothing on the menu can be called."""
+    registry = CapabilityRegistry()
+    registry.add(_capability(id="test.public", exposed=True))
+
+    entry = TargetResolver(tools, registry).menu()["capabilities"][0]
+
+    assert entry["summary"] == "Mierzy."
+    assert all(not callable(value) for value in entry.values())

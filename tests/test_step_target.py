@@ -285,3 +285,69 @@ def test_the_planner_drops_a_step_it_cannot_run_and_says_why(runtime) -> None:
 
     assert [s.target for s in plan.steps] == [ToolTarget("note")]
     assert "nieznana zdolność" in plan.notes
+
+
+def test_the_planner_keeps_a_step_naming_a_known_capability(runtime, db) -> None:
+    """A capability on the menu survives validation and its parameters are coerced."""
+    from garis.capabilities.base import (
+        Capability,
+        Field,
+        Outcome,
+        Permission,
+        Risk,
+        evidence_verifier,
+    )
+    from garis.capabilities.registry import CapabilityRegistry
+    from garis.runtime import TargetResolver
+
+    ran: list[str] = []
+
+    async def executor(invocation):
+        ran.append(invocation.capability)
+        return Outcome(ok=True, value={}, evidence={"seen": 1})
+
+    catalogue = CapabilityRegistry()
+    catalogue.add(Capability(
+        id="test.count", version=1, summary="Liczy.", risk=Risk.READ,
+        permission=Permission.NONE, executor=executor, verifier=evidence_verifier(),
+        effects=frozenset(), exposed=True,
+        inputs=(Field("limit", "int", "Ile", required=False),),
+        evidence=(Field("seen", "int", "Co zmierzono"),),
+    ))
+
+    router = ModelRouter([FakeProvider("{}", stub=True)], ModelsConfig())
+    planner = Planner(router, runtime.registry, language="pl",
+                      resolver=TargetResolver(runtime.registry, catalogue))
+
+    plan = planner._sanitise(
+        Plan(steps=[PlanStep(key="a", target=CapabilityTarget("test.count"),
+                             params={"limit": "5"})]),
+        Goal("policz"),
+    )
+
+    assert [s.target for s in plan.steps] == [CapabilityTarget("test.count")]
+    assert plan.steps[0].params == {"limit": 5}, "parametry skoercowane przez zdolność"
+
+    # Planning is not doing. Neither the executor nor the effect ledger moved.
+    assert ran == [], "planner uruchomił zdolność"
+    assert db.query("SELECT * FROM effects") == []
+    assert db.query("SELECT * FROM audit") == []
+
+
+def test_the_planner_cannot_reach_execution_at_all() -> None:
+    """Structural: planning must not acquire a runner, a policy or an effect store."""
+    import ast
+    import inspect
+
+    from garis.agent import planner as planner_module
+
+    tree = ast.parse(inspect.getsource(planner_module))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)) and ast.get_docstring(node):
+            node.body = node.body[1:]
+    code = ast.unparse(tree)
+
+    for forbidden in ("CapabilityRunner", "runner", "PolicyEngine", "EffectStore",
+                      "ApprovalBroker", "AuditLog", ".perform("):
+        assert forbidden not in code, f"planner sięgnął po wykonanie: {forbidden}"
