@@ -69,6 +69,11 @@ LIST = REGISTRY.add(
         summary="Wypisuje działające procesy, opcjonalnie filtrując po nazwie.",
         risk=Risk.READ,
         permission=Permission.SYSTEM_READ,
+        # Stated, not left blank by accident. Listing processes changes nothing,
+        # and `Permission.SYSTEM_READ` is not allowed to imply that — the same
+        # permission would cover killing one.
+        effects=frozenset(),
+        reversible=True,
         executor=_list,
         verifier=evidence_verifier("Odczytałem listę procesów."),
         inputs=(

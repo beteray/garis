@@ -10,21 +10,32 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from garis import app as garis_app
 from garis.capabilities.native import NativeCapabilityExecutor
-from garis.capabilities.registry import CapabilityRegistry
+from garis.capabilities.registry import (
+    CapabilityRegistry,
+    Performed,
+    performed_from,
+)
 from garis.config import Config
 from garis.crypto import SecretBox, load_or_create_master_key, subkey
+from garis.errors import Unsupported
 from garis.events import EventBus
-from garis.kernel.contracts import RuntimeProfile
+from garis.kernel.contracts import (
+    CapabilityTarget,
+    ExecutionContext,
+    RuntimeProfile,
+)
 from garis.kernel.effects import EffectStore
 from garis.kernel.outbox import EventOutbox
 from garis.memory import MemoryService
 from garis.paths import Paths
 from garis.runtime import (
+    Action,
     ApprovalBroker,
     AuditLog,
     Effect,
@@ -226,6 +237,45 @@ def bind(registry: CapabilityRegistry, runner: CapabilityRunner) -> CapabilityRe
     runner.register_executor("capability", NativeCapabilityExecutor(registry))
     registry.bind(runner)
     return registry
+
+
+@pytest.fixture
+def perform():
+    """Run a capability the way production does — target, envelope, translate.
+
+    The catalogue used to carry a `perform()` of its own. Nothing in production
+    called it; it survived because tests were shorter with it, which is exactly
+    how a second execution path stays alive. This helper builds the target and
+    calls the one envelope, so the tests exercise the path the engine uses.
+    """
+
+    async def run(
+        registry: CapabilityRegistry,
+        capability_id: str,
+        args: dict[str, Any] | None = None,
+        *,
+        effect_id: str = "",
+        task_id: str = "",
+        step_key: str = "",
+    ) -> Performed:
+        capability = registry.get(capability_id)
+        runner = registry.runner
+        if runner is None:
+            raise Unsupported(
+                f"Katalog zdolności nie jest podłączony do wykonawcy — "
+                f"{capability_id!r} nie ma jak się wykonać",
+                tool=capability_id,
+            )
+        result = await runner.run(
+            CapabilityTarget(capability.id),
+            Action(tool=capability.id, params=dict(args or {}),
+                   task_id=task_id or None, step_key=step_key or None),
+            ExecutionContext(task_id=task_id, step_key=step_key, effect_id=effect_id,
+                             runtime_profile=runner.profile),
+        )
+        return performed_from(capability, result)
+
+    return run
 
 
 @pytest.fixture

@@ -23,14 +23,12 @@ capabilities and answers questions about them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..errors import Unsupported
-from ..kernel.contracts import CapabilityTarget, ExecutionContext, Failure
-from ..runtime.action import Action
+from ..kernel.contracts import Failure
 from .base import Capability, Outcome, Verdict
-from .legacy_effects import migrate, needs_migration
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..runtime.runner import CapabilityRunner, RunnerResult
@@ -88,11 +86,19 @@ class CapabilityRegistry:
             raise ValueError(
                 f"{capability.id}: wersja {existing.version} jest już zarejestrowana"
             )
-        if needs_migration(capability.risk, capability.effects):
-            # Written before effects were declarable. Kept running, loudly, until
-            # commit 4 removes the bridge and this becomes a registration error.
-            capability = replace(
-                capability, effects=migrate(capability.id, capability.risk)
+        if capability.risk.mutating and not capability.effects:
+            # No bridge, no fallback, no guess. A capability that changes the
+            # world and says nothing about how would be gated like a read, and
+            # the only person who can say what it changes is its author.
+            #
+            # `permission` cannot stand in for this: FILES covers reading a name
+            # and permanently deleting a directory, PROCESS covers listing and
+            # killing. Declaring `effects=frozenset()` is a legitimate answer —
+            # for something that genuinely only reads — but it has to be said.
+            raise ValueError(
+                f"{capability.id}: zdolność zmienia stan ({capability.risk.value}), "
+                f"więc musi zadeklarować effects=. Dla samego odczytu podaj "
+                f"effects=frozenset()."
             )
         self._by_id[capability.id] = capability
         return capability
@@ -141,57 +147,15 @@ class CapabilityRegistry:
             if c.exposed and c.supported_here()
         ]
 
-    # ---------------------------------------------------------------- running
+def performed_from(capability: Capability, result: RunnerResult) -> Performed:
+    """The runner's structured answer, in capability terms.
 
-    async def perform(
-        self,
-        capability_id: str,
-        args: dict[str, Any] | None = None,
-        *,
-        effect_id: str = "",
-        task_id: str = "",
-        step_key: str = "",
-    ) -> Performed:
-        """Deprecated shim: run a capability through the bound runner.
-
-        Kept so the callers written against the old signature keep working while
-        they move to targets. It decides nothing — it builds an action, calls the
-        one envelope and translates the answer back into ``Performed``.
-        """
-        capability = self.get(capability_id)
-        if self.runner is None:
-            raise Unsupported(
-                f"Katalog zdolności nie jest podłączony do wykonawcy — "
-                f"{capability_id!r} nie ma jak się wykonać",
-                tool=capability_id,
-            )
-
-        action = Action(
-            tool=capability.id,
-            params=dict(args or {}),
-            task_id=task_id or None,
-            step_key=step_key or None,
-        )
-        context = ExecutionContext(
-            task_id=task_id, step_key=step_key, effect_id=effect_id,
-            runtime_profile=self.runner.profile,
-        )
-        result = await self.runner.run(CapabilityTarget(capability.id), action, context)
-        return _performed(capability, result)
-
-    def forget_effects(self) -> None:
-        """Kept as a no-op for callers that still clear per-run state.
-
-        There is nothing to clear: effect identity is a row in the database now,
-        which is the whole point — an in-memory dict lost exactly the crash it
-        was supposed to survive.
-        """
-        return None
-
-
-def _performed(capability: Capability, result: RunnerResult) -> Performed:
-    """The runner's structured answer, in the shape this catalogue has returned
-    since the layer existed."""
+    Translation, not execution: it takes what the one envelope already returned.
+    The catalogue used to own a `perform()` that built an action and called the
+    runner itself — convenient, and a second door into execution that nothing in
+    production used. Whoever runs a capability builds the target and calls the
+    runner; this turns the answer back into `Performed`.
+    """
     verification = result.verification
     note = verification.reason or result.error
     if result.failure is Failure.UNSUPPORTED_PLATFORM:

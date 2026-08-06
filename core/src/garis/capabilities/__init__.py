@@ -19,7 +19,7 @@ from .base import (
     always_unchecked,
     evidence_verifier,
 )
-from .registry import REGISTRY, CapabilityRegistry, Performed
+from .registry import REGISTRY, CapabilityRegistry, Performed, performed_from
 
 __all__ = [
     "REGISTRY",
@@ -34,4 +34,5 @@ __all__ = [
     "Verdict",
     "always_unchecked",
     "evidence_verifier",
+    "performed_from",
 ]

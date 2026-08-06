@@ -123,7 +123,9 @@ async def run_capability(runner, registry, name, args=None, effect_id=""):
 
 
 async def test_a_tool_and_a_capability_are_run_by_the_same_machinery(
-    runtime, capability_runner
+    runtime,
+    capability_runner,
+    perform,
 ) -> None:
     """The point of the whole commit: not two paths that agree, one path."""
     runs: list[str] = []
@@ -140,7 +142,7 @@ async def test_a_tool_and_a_capability_are_run_by_the_same_machinery(
         runner.run = watched  # type: ignore[method-assign]
 
     await runtime.perform_tool("note", text="x")
-    await registry.perform("runner.thing")
+    await perform(registry, "runner.thing")
 
     assert entered == ["ToolTarget", "CapabilityTarget"], (
         "obie drogi muszą wejść do tej samej koperty"
@@ -182,12 +184,12 @@ async def test_a_legacy_tool_is_judged_once(runtime) -> None:
     assert tally.evaluations == 1
 
 
-async def test_a_capability_is_judged_once(capability_runner) -> None:
+async def test_a_capability_is_judged_once(capability_runner, perform) -> None:
     runs: list[str] = []
     registry = catalogue(capability_runner, capability(runs))
     tally = counting(capability_runner)
 
-    await registry.perform("runner.thing")
+    await perform(registry, "runner.thing")
 
     assert tally.evaluations == 1
 
@@ -324,7 +326,8 @@ async def test_a_repeated_reading_measures_again_instead_of_replaying(runtime) -
 
 
 async def test_a_finished_effect_is_replayed_rather_than_done_again(
-    capability_runner
+    capability_runner,
+    perform,
 ) -> None:
     runs: list[str] = []
     registry = catalogue(
@@ -333,15 +336,16 @@ async def test_a_finished_effect_is_replayed_rather_than_done_again(
                    effects=frozenset({Effect.WRITE})),
     )
 
-    first = await registry.perform("runner.once", effect_id="once-1")
-    second = await registry.perform("runner.once", effect_id="once-1")
+    first = await perform(registry, "runner.once", effect_id="once-1")
+    second = await perform(registry, "runner.once", effect_id="once-1")
 
     assert len(runs) == 1, "drugi przebieg wykonałby efekt jeszcze raz"
     assert second.outcome.value == first.outcome.value
 
 
 async def test_the_same_identity_for_different_arguments_is_refused(
-    capability_runner
+    capability_runner,
+    perform,
 ) -> None:
     """A reused id would hand back someone else's result, or act under a used
     identity. Neither is acceptable, so nothing runs."""
@@ -352,15 +356,17 @@ async def test_the_same_identity_for_different_arguments_is_refused(
                    inputs=(Field("level", "int", "Poziom"),)),
     )
 
-    await registry.perform("runner.args", {"level": 1}, effect_id="shared")
-    performed = await registry.perform("runner.args", {"level": 2}, effect_id="shared")
+    await perform(registry, "runner.args", {"level": 1}, effect_id="shared")
+    performed = await perform(registry, "runner.args", {"level": 2}, effect_id="shared")
 
     assert not performed.ok
     assert len(runs) == 1, "drugie wywołanie nie mogło dotknąć wykonawcy"
 
 
 async def test_an_uncertain_effect_is_never_quietly_repeated(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     """Retrying something that might have worked is how one payment becomes two."""
     runs: list[str] = []
@@ -371,14 +377,14 @@ async def test_an_uncertain_effect_is_never_quietly_repeated(
     capability_runner.effects.reserve("maybe-1", capability_id="runner.maybe")
     capability_runner.effects.mark_uncertain("maybe-1", "proces padł w trakcie")
 
-    performed = await registry.perform("runner.maybe", effect_id="maybe-1")
+    performed = await perform(registry, "runner.maybe", effect_id="maybe-1")
 
     assert runs == [], "nie wolno powtarzać czegoś, co mogło się wydarzyć"
     assert not performed.ok
     assert performed.outcome.uncertain
 
 
-async def test_a_crash_mid_effect_is_recorded_as_uncertain(capability_runner, db) -> None:
+async def test_a_crash_mid_effect_is_recorded_as_uncertain(capability_runner, db, perform) -> None:
     async def boom(_: Invocation) -> Outcome:
         raise RuntimeError("bum")
 
@@ -388,7 +394,7 @@ async def test_a_crash_mid_effect_is_recorded_as_uncertain(capability_runner, db
                    effects=frozenset({Effect.WRITE})),
     )
 
-    performed = await registry.perform("runner.boom", effect_id="boom-1")
+    performed = await perform(registry, "runner.boom", effect_id="boom-1")
 
     assert not performed.ok and performed.outcome.uncertain
     record = capability_runner.effects.load("boom-1")
@@ -396,7 +402,7 @@ async def test_a_crash_mid_effect_is_recorded_as_uncertain(capability_runner, db
     assert not record.repeatable
 
 
-async def test_a_crash_in_a_reading_is_a_plain_failure(capability_runner) -> None:
+async def test_a_crash_in_a_reading_is_a_plain_failure(capability_runner, perform) -> None:
     """Nothing changed, so "I don't know" would be its own kind of untruth."""
 
     async def boom(_: Invocation) -> Outcome:
@@ -406,7 +412,7 @@ async def test_a_crash_in_a_reading_is_a_plain_failure(capability_runner) -> Non
         capability_runner, capability([], id="runner.readboom", executor=boom)
     )
 
-    performed = await registry.perform("runner.readboom", effect_id="rb-1")
+    performed = await perform(registry, "runner.readboom", effect_id="rb-1")
 
     assert not performed.ok and not performed.outcome.uncertain
     record = capability_runner.effects.load("rb-1")
@@ -417,7 +423,7 @@ async def test_a_crash_in_a_reading_is_a_plain_failure(capability_runner) -> Non
 # --------------------------------------------------------------- truthfulness
 
 
-async def test_a_failed_postcondition_never_becomes_verified(capability_runner) -> None:
+async def test_a_failed_postcondition_never_becomes_verified(capability_runner, perform) -> None:
     async def unproven(_: Invocation) -> Outcome:
         return Outcome(ok=True, value={"done": True}, evidence={})  # nothing measured
 
@@ -425,13 +431,13 @@ async def test_a_failed_postcondition_never_becomes_verified(capability_runner) 
         capability_runner, capability([], id="runner.silent", executor=unproven)
     )
 
-    performed = await registry.perform("runner.silent")
+    performed = await perform(registry, "runner.silent")
 
     assert performed.ok, "wykonanie się powiodło"
     assert not performed.verified, "ale nic tego nie potwierdziło"
 
 
-async def test_a_verifier_that_refuses_cannot_be_talked_round(capability_runner) -> None:
+async def test_a_verifier_that_refuses_cannot_be_talked_round(capability_runner, perform) -> None:
     async def says_no(_: Invocation, __: Outcome) -> CapVerdict:
         return CapVerdict(ok=False, checked=True, note="Sprawdziłem i nie wyszło.")
 
@@ -440,7 +446,7 @@ async def test_a_verifier_that_refuses_cannot_be_talked_round(capability_runner)
         capability([], id="runner.refused", verifier=says_no, evidence=()),
     )
 
-    performed = await registry.perform("runner.refused")
+    performed = await perform(registry, "runner.refused")
 
     assert not performed.verified
     assert performed.verdict.checked
@@ -464,7 +470,9 @@ async def test_a_tool_with_no_postcondition_is_finished_but_not_checked(
 
 
 async def test_a_settlement_and_its_event_land_together_or_not_at_all(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     """An announcement about something that did not commit is the same family of
     untruth as a stub reporting "sprawdzone"."""
@@ -486,7 +494,7 @@ async def test_a_settlement_and_its_event_land_together_or_not_at_all(
 
     capability_runner.outbox.stage = refuse  # type: ignore[method-assign]
 
-    performed = await registry.perform("runner.atomic", effect_id="atom-1")
+    performed = await perform(registry, "runner.atomic", effect_id="atom-1")
 
     assert not performed.ok
     assert performed.outcome.uncertain, "wykonało się, ale nie da się tego zapisać"

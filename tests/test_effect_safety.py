@@ -215,14 +215,14 @@ async def test_a_missing_secret_never_reached_the_handler(runtime, db) -> None:
 # ------------------------------------------------------- crash means unknown
 
 
-async def test_an_effectful_crash_becomes_uncertain(capability_runner, db) -> None:
+async def test_an_effectful_crash_becomes_uncertain(capability_runner, db, perform) -> None:
     async def boom(_: Invocation) -> Outcome:
         raise RuntimeError("bum")
 
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender([], id="safety.boom", executor=boom))
 
-    performed = await registry.perform("safety.boom", effect_id="boom-1")
+    performed = await perform(registry, "safety.boom", effect_id="boom-1")
 
     assert not performed.ok and performed.outcome.uncertain
     record = capability_runner.effects.load("boom-1")
@@ -273,7 +273,9 @@ async def test_a_read_that_failed_may_simply_be_read_again(runtime, db) -> None:
 
 
 async def test_a_proven_harmless_failure_may_be_attempted_again(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     runs: list[str] = []
 
@@ -289,15 +291,17 @@ async def test_a_proven_harmless_failure_may_be_attempted_again(
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender([], id="safety.refused", executor=refused))
 
-    first = await registry.perform("safety.refused", effect_id="ref-1")
-    second = await registry.perform("safety.refused", effect_id="ref-1")
+    first = await perform(registry, "safety.refused", effect_id="ref-1")
+    second = await perform(registry, "safety.refused", effect_id="ref-1")
 
     assert not first.ok and second.ok
     assert len(runs) == 2, "dowiedziona porażka bez skutku wolno powtórzyć"
 
 
 async def test_a_second_attempt_is_numbered_and_keeps_the_first_on_record(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     """A retry that overwrote the previous attempt would erase the reason for it."""
     runs: list[str] = []
@@ -312,8 +316,8 @@ async def test_a_second_attempt_is_numbered_and_keeps_the_first_on_record(
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender([], id="safety.numbered", executor=refused))
 
-    await registry.perform("safety.numbered", effect_id="num-1")
-    await registry.perform("safety.numbered", effect_id="num-1")
+    await perform(registry, "safety.numbered", effect_id="num-1")
+    await perform(registry, "safety.numbered", effect_id="num-1")
 
     record = capability_runner.effects.load("num-1")
     assert record is not None
@@ -323,7 +327,7 @@ async def test_a_second_attempt_is_numbered_and_keeps_the_first_on_record(
     assert "pierwsza próba odrzucona" in record.attempts[0]["reason"]
 
 
-async def test_both_attempts_stay_in_the_audit_trail(capability_runner, db) -> None:
+async def test_both_attempts_stay_in_the_audit_trail(capability_runner, db, perform) -> None:
     runs: list[str] = []
 
     async def refused(invocation: Invocation) -> Outcome:
@@ -336,8 +340,8 @@ async def test_both_attempts_stay_in_the_audit_trail(capability_runner, db) -> N
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender([], id="safety.audited", executor=refused))
 
-    await registry.perform("safety.audited", effect_id="aud-1")
-    await registry.perform("safety.audited", effect_id="aud-1")
+    await perform(registry, "safety.audited", effect_id="aud-1")
+    await perform(registry, "safety.audited", effect_id="aud-1")
 
     rows = audit_rows(db, "safety.audited")
     assert len(rows) == 2, "audyt jest dopisywany, nie nadpisywany"
@@ -372,13 +376,15 @@ def postcondition_failing(runs: list[str]) -> Capability:
 
 
 async def test_a_measured_miss_is_a_checked_failure_not_an_unknown(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     runs: list[str] = []
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(postcondition_failing(runs))
 
-    performed = await registry.perform("safety.volume", effect_id="vol-1")
+    performed = await perform(registry, "safety.volume", effect_id="vol-1")
 
     assert performed.ok, "wykonawca zwrócił wynik"
     assert not performed.verified, "ale cel nie został osiągnięty"
@@ -393,7 +399,9 @@ async def test_a_measured_miss_is_a_checked_failure_not_an_unknown(
 
 
 async def test_a_measured_miss_replays_as_the_same_failure_without_running_again(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     """The regression this commit exists for.
 
@@ -406,8 +414,8 @@ async def test_a_measured_miss_replays_as_the_same_failure_without_running_again
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(postcondition_failing(runs))
 
-    first = await registry.perform("safety.volume", effect_id="vol-2")
-    second = await registry.perform("safety.volume", effect_id="vol-2")
+    first = await perform(registry, "safety.volume", effect_id="vol-2")
+    second = await perform(registry, "safety.volume", effect_id="vol-2")
 
     assert len(runs) == 1, "nie wolno wykonać efektu drugi raz"
     assert not second.verified, "sprawdzona porażka nie zmienia się w sukces"
@@ -439,13 +447,15 @@ async def test_a_replayed_verdict_keeps_every_field_it_was_recorded_with(
 
 
 async def test_an_applied_effect_cannot_be_reclaimed_for_another_go(
-    capability_runner, db
+    capability_runner,
+    db,
+    perform,
 ) -> None:
     runs: list[str] = []
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(postcondition_failing(runs))
 
-    await registry.perform("safety.volume", effect_id="vol-3")
+    await perform(registry, "safety.volume", effect_id="vol-3")
     record = capability_runner.effects.load("vol-3")
     assert record is not None and not record.repeatable
 
@@ -456,27 +466,28 @@ async def test_an_applied_effect_cannot_be_reclaimed_for_another_go(
 
 
 async def test_a_successful_effect_replays_without_touching_the_executor(
-    capability_runner
+    capability_runner,
+    perform,
 ) -> None:
     runs: list[str] = []
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender(runs, id="safety.once"))
 
-    first = await registry.perform("safety.once", effect_id="once-1")
-    second = await registry.perform("safety.once", effect_id="once-1")
+    first = await perform(registry, "safety.once", effect_id="once-1")
+    second = await perform(registry, "safety.once", effect_id="once-1")
 
     assert len(runs) == 1
     assert second.outcome.value == first.outcome.value
 
 
-async def test_an_uncertain_effect_refuses_to_be_replayed(capability_runner) -> None:
+async def test_an_uncertain_effect_refuses_to_be_replayed(capability_runner, perform) -> None:
     runs: list[str] = []
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender(runs, id="safety.maybe"))
     capability_runner.effects.reserve("maybe-1", capability_id="safety.maybe")
     capability_runner.effects.mark_uncertain("maybe-1", "proces padł w trakcie")
 
-    performed = await registry.perform("safety.maybe", effect_id="maybe-1")
+    performed = await perform(registry, "safety.maybe", effect_id="maybe-1")
 
     assert runs == []
     assert not performed.ok and performed.outcome.uncertain
@@ -557,13 +568,14 @@ async def test_the_compatibility_facade_never_invents_a_verification(
 
 
 async def test_a_returned_result_with_an_unmet_goal_is_not_a_success(
-    capability_runner
+    capability_runner,
+    perform,
 ) -> None:
     runs: list[str] = []
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(postcondition_failing(runs))
 
-    performed = await registry.perform("safety.volume", effect_id="vol-4")
+    performed = await perform(registry, "safety.volume", effect_id="vol-4")
 
     assert performed.outcome.ok is True
     assert performed.verified is False
@@ -573,12 +585,12 @@ async def test_a_returned_result_with_an_unmet_goal_is_not_a_success(
 # ----------------------------------------------------------------- audit
 
 
-async def test_the_audit_says_what_happened_to_the_world(capability_runner, db) -> None:
+async def test_the_audit_says_what_happened_to_the_world(capability_runner, db, perform) -> None:
     runs: list[str] = []
     registry = bind(CapabilityRegistry(), capability_runner)
     registry.add(sender(runs, id="safety.audit"))
 
-    await registry.perform("safety.audit", effect_id="a-1")
+    await perform(registry, "safety.audit", effect_id="a-1")
 
     row = audit_rows(db, "safety.audit")[0]
     assert row["detail"].startswith("[applied]")
