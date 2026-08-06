@@ -34,7 +34,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (390 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (516 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -46,11 +46,20 @@ core/src/garis/
   paths errors events config crypto store net    infrastruktura
   settings.py                                    ustawienia na żywo: jeden pisarz, obserwator pliku
   memory.py vault.py                             stan, szyfrowanie (sejf ogłasza zmiany)
-  runtime/                                       JEDYNA ścieżka wykonania
+  kernel/                                        słownik wspólny: Effect, Risk, Permission,
+    contracts.py                                 Failure, Verification, dyspozycje efektu
+    effects.py outbox.py                         księga efektów + transakcyjny outbox
+  runtime/                                       JEDYNA koperta wykonania
+    runner.py                                    CapabilityRunner: 16 kroków, jedna kolejność
+    legacy.py                                    wykonawca narzędzi — tylko handler
+    policy.py approvals.py audit.py leases.py    bramki, dokładnie raz każda
+  capabilities/                                  zdolności z weryfikatorem i dowodami
+    native.py                                    wykonawca zdolności — tylko executor
+  profiles.py                                    PRODUCTION / DEVELOPMENT / TEST / FIXTURE
   models/ + models/providers/                    router + 5 dostawców
     health.py                                    7 statusów dostawcy, mierzonych
     pool.py                                      przebudowa przy zmianie + check co godzinę
-  tools/                                         53 narzędzia
+  tools/                                         56 narzędzi
   agent/                                         plan → wykonaj → sprawdź → napraw
   tasks/                                         trwałość, współbieżność
   api/                                           HTTP + WebSocket dla wszystkich powierzchni
@@ -68,7 +77,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 390 passed
+.venv/bin/python -m pytest -q                 # 516 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -86,7 +95,11 @@ udawać sukces.
   `x86_64-pc-windows-msvc`, a pełna ścieżka instalator → start → runtime została
   przejechana na paczce `.deb`. Windows-owe zostaje to, co naprawdę zależy od
   Windows: Mica, tray, `Ctrl+Alt+G`, autostart, `.msi`.
-- audio i słowo aktywacyjne (etap 3), mobile (etap 7)
+- **audio nie istnieje.** Warstwa decyzyjna głosu jest kompletna i przetestowana
+  (stany, słowo aktywacyjne, kalibracja, wybór drogi), ale STT i TTS to atrapy
+  testowe w `voice/engines.py` — nie ma wejścia audio, nie ma faster-whisper, nie
+  ma Pipera. To M13 i jest zablokowane do czasu, aż reszta produktu działa.
+- mobile (etap 7)
 - ścieżki natywne Windows **nie były uruchomione na Windows** — powstały na
   Linuksie, z deklaracją platformy i `Unsupported` poza Windows. To pierwsza
   rzecz do zrobienia w etapie 4, razem z CI na `windows-latest`
@@ -116,6 +129,17 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
 5. **Warstwa niżej nie importuje wyższej.** `models` nie wie o `agent`; `runtime`
    nie wie o `tasks`.
 6. **Awaria narzędzia to `ActionResult`, brak zgody to wyjątek.** Nie zamieniaj.
+6a. **„Nie udało się" nie jest dowodem, że nic się nie stało.** Wykonawca, który
+    wysłał wiadomość i padł na odczycie potwierdzenia, zawiódł **i** zadziałał;
+    ten, który nie otworzył gniazda, zawiódł i nie zadziałał. Rzucają
+    identycznie. Ponowić wolno wyłącznie przy dyspozycji `not_started` albo
+    `not_applied`, a `not_applied` pochodzi tylko z własnej, ustrukturyzowanej
+    deklaracji wykonawcy — nigdy z typu wyjątku ani z treści komunikatu.
+6b. **Pięć pytań, pięć pól.** Czy kod się wykonał (`Outcome.ok`) · czy świat się
+    zmienił (`EffectDisposition`) · czy cel osiągnięto (`goal_met`) · czy ktoś
+    sprawdził (`checked`) · czy znamy wynik (`not uncertain`). Żadna trasa nie
+    wyprowadza sukcesu zadania z samego `Outcome.ok`. `EffectState.DONE` znaczy
+    „rozliczone zgodnie z prawdą", nie „użytkownik dostał, o co prosił".
 7. **Cisza jest domyślna.** `ctx.progress()` do dziennika; `ctx.note()` tylko gdy
    człowiek naprawdę powinien to usłyszeć.
 8. **Raport buduje się z faktów** (`agent/report.py`), nie z modelu. Model nie
@@ -348,7 +372,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 390 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 516 testów, musi być zielone
 cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy

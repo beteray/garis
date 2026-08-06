@@ -32,6 +32,11 @@ produktu bada nieprawdę. Klasyfikator (M2) musi być przed pracą nad zadaniami
 (M3), bo inaczej projektujemy stany dla obiektów, które w ogóle nie powinny
 powstawać.
 
+Silnikowa część M1 i M4 stoi dziś na jednej kopercie wykonania
+(`CapabilityRunner`, patrz `docs/ARCHITECTURE.md`): jedna decyzja polityki, jeden
+wpis audytu i jeden efekt na wywołanie, wspólne dla narzędzi i zdolności. M2 i M3
+dziedziczą to i nie muszą tego budować.
+
 ---
 
 ## M1 — Prawda o stanie · **P0** · silnik zrobiony
@@ -199,9 +204,44 @@ zestaw 249 testów na zielono. Testy jednostkowe nie wystarczą.
    z oznaczeniem źródła `chosen`.
 5. Test migracji uruchamiany na bazie z poprzedniej wersji, w CI.
 
+## Wizja 1.0 a rzeczywistość
+
+Dokument wizji („General AI Runtime Intelligence System", 8 faz) opisuje cel i
+**nie opisuje drzewa katalogów**. Jego układ plików — `core/agent.py`,
+`ai/router.py`, `memory/`, `mcp/`, `plugins/` — nigdy nie powstał; powstał układ
+warstwowy z `kernel/` i regułą, że warstwa niżej nie importuje wyższej, czego
+wizja nie ma jak wyrazić. Tabela poniżej mapuje jedno na drugie, żeby nikt nie
+szukał katalogu, którego nie ma, ani nie zakładał, że coś działa, bo widnieje w
+wizji.
+
+Stan zmierzony, nie zadeklarowany.
+
+| Podsystem wizji | Stan | Gdzie to naprawdę jest | Czego brakuje |
+|---|---|---|---|
+| Core / agent | **jest** | `agent/` (cel → plan → wykonaj → sprawdź → napraw), `runtime/runner.py` | — |
+| AI Router + dostawcy | **częściowo** | `models/router.py` + `providers/{openai,anthropic,gemini,ollama}.py` | llama.cpp, LM Studio — brak dostawcy zgodnego z OpenAI |
+| Tool Engine | **jest** | `tools/` — 56 narzędzi w 8 modułach | sterowanie przeglądarką (brak playwright/selenium) |
+| Pamięć | **częściowo** | `memory.py` (szyfrowana, `Scope`, 10 rodzajów), `vault.py` | wyszukiwanie wektorowe — **świadomie**, patrz `memory.py:5`; profil użytkownika (M8) |
+| Bezpieczeństwo | **jest** | `runtime/policy.py` — `ALLOW`/`CONFIRM`/`DENY`, `runtime/audit.py`, `runtime/approvals.py` | audyt łańcuchowy (hash chain) — przyjęty, niezbudowany |
+| Głos | **częściowo** | `voice/` — stany, słowo aktywacyjne, kalibracja, wybór drogi | **cała warstwa sprzętowa**: STT/TTS to atrapy testowe (`voice/engines.py:160,190`), brak wejścia audio. M13 |
+| Vision | **częściowo** | `tools/desktop.py` — `screen_capture`; obsługa obrazu w `models/base.py` i adapterach | kamera, OCR, czytanie ekranu; nic nie podaje zrzutu do `Message.images` |
+| MCP | **nie ma** | — | całość |
+| Pluginy | **nie ma** | `paths.py:90` tworzy pusty katalog, którego nikt nie czyta | całość — patrz `KNOWN_ISSUES.md` |
+| Scheduler / autonomia | **nie ma** | — | **świadomie**, patrz `apps/desktop/src/lib/nav.ts:11` |
+| UI | **częściowo** | 6 widoków w `apps/desktop/src/lib/nav.ts` | „Tools" tylko w trybie developerskim; „Plugins" nie istnieje |
+
+Fazy 1–8 wizji odpowiadają etapom w `ROADMAP_ETAPY_1_8.md` (zachowanym jako
+historia). MCP i pluginy to tam etap 8 i pozostają tam, gdzie były.
+
 ## Czego świadomie nie robimy teraz
 
 Mobile · GARIS Server · MCP i pluginy · modele lokalne · integracje poczty i
 kalendarza · wielojęzyczność poza polskim i angielskim. Wszystko to jest
 sensowne i wszystko to jest bez znaczenia, dopóki produkt nie działa dla jednej
 osoby na jednym komputerze.
+
+Do tej listy należy też **wyszukiwanie wektorowe w pamięci** i **scheduler**.
+Oba wyglądają na oczywiste braki i oba są decyzją: pamięć trzyma pola, po których
+da się wyszukiwać i które da się pokazać człowiekowi, zamiast nieprzejrzystego
+wektora, a panel automatyzacji bez ani jednego producenta zdarzeń byłby ekranem
+udającym ustawienia.

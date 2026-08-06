@@ -142,4 +142,11 @@ Uczciwie, żeby nie wyglądało na skończone:
   (`restart_engine`) **nie była uruchomiona** — w przeglądarce nie ma `invoke`.
 - `window-vibrancy` przypięte na `0.5` (dostępne `0.8`). Nie ruszam bez
   możliwości obejrzenia efektu.
-- Głos ma warstwę decyzyjną bez audio — `docs/ROADMAP.md`, etap 3.
+- Głos ma warstwę decyzyjną bez audio — `docs/ROADMAP.md`, M13.
+- **`~/.garis/plugins/` powstaje przy każdym starcie i nikt go nie czyta.**
+  `paths.py:90` deklaruje właściwość `plugins`, `ensure()` tworzy katalog, i na
+  tym koniec — grep po całym źródle nie znajduje ani jednego czytelnika. Pusty
+  katalog o takiej nazwie sugeruje, że pluginy są obsługiwane; nie są, i nie ma
+  ani jednej linii kodu, która by je ładowała. Albo katalog znika, albo jest
+  pierwszą połową funkcji, której nikt nie skończył — do rozstrzygnięcia razem z
+  etapem 8. Zapisane, żeby następny czytelnik nie wyciągnął z niego wniosku.

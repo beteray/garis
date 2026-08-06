@@ -1,4 +1,14 @@
-# Roadmapa
+# Roadmapa etapów 1–8 — dokument historyczny
+
+> **Zastąpiony przez `ROADMAP.md`** (milestone'y M1–M13). Zachowany, bo definicje
+> etapów i kryteria ukończenia nadal są użyteczne, a fazy 1–8 z dokumentu wizji
+> („General AI Runtime Intelligence System") mapują się właśnie tutaj — MCP,
+> pluginy i dostawcy zgodni z OpenAI to etap 8.
+>
+> **Liczby w tym pliku są zamrożone w chwili zapisu** i celowo nie są
+> odświeżane: 53 narzędzia, 249 testów. Aktualne wartości są w
+> `CURRENT_STATE.md`. Dokument historyczny, którego liczby wciąż się zmieniają,
+> nie jest zapisem niczego.
 
 Etapami, ale celem jest pełny GARIS — nie demonstracja otwierająca Notatnik.
 Każdy etap ma kryteria ukończenia, które da się sprawdzić, a nie ocenić.
