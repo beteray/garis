@@ -5,6 +5,9 @@ Etap A of the `PlanStep.tool` → `PlanStep.target` migration (see
 loads, and nothing outside the engine can tell the difference. Every test here
 guards one of the risks that document names — the ones that would otherwise be
 found months later, in a report that quietly said the wrong thing.
+
+The last section covers Etap B: the checks that used to key on a tool name now
+key on the target itself.
 """
 
 from __future__ import annotations
@@ -13,10 +16,14 @@ import sqlite3
 
 import pytest
 
-from garis.agent.goal import Plan, PlanStep
+from garis.agent.goal import Goal, Plan, PlanStep
+from garis.agent.planner import Planner
 from garis.agent.verify import StepEvidence
 from garis.api import protocol as proto
+from garis.config import ModelsConfig
 from garis.kernel import CapabilityTarget, ToolTarget
+from garis.models import ModelRouter
+from garis.models.providers.fake import FakeProvider
 from garis.runtime import Action
 from garis.store import SCHEMA, Database
 from garis.tasks import TaskStore
@@ -214,3 +221,49 @@ async def test_the_loop_reaches_the_runner_through_the_target(runtime) -> None:
 
     assert result.ok
     assert seen == [ToolTarget("note")]
+
+
+# ------------------------------------------------- Etap B: the checks key on target
+
+
+def test_a_reflex_answers_for_its_target_and_not_for_a_lookalike_name() -> None:
+    """R1 closed. The reflex table is keyed on the target, not on its name.
+
+    Before this, `check` took a string. A capability named after the tool it
+    replaces would have been looked up, missed, and reported as "I cannot verify
+    this" — turning a measured success into a failure. Keyed on the target, a
+    capability is simply a different key, and repointing a reflex is a visible
+    edit rather than a silent miss.
+    """
+    from garis.agent import reflex
+
+    good = {"total": 100 * 1024**3, "free": 40 * 1024**3, "used": 60 * 1024**3,
+            "percent": 60.0, "path": "C:"}
+
+    assert reflex.check(ToolTarget("disk_usage"), good) == ""
+    assert reflex.answer(ToolTarget("disk_usage"), good)
+
+    # Same trailing name, different kind of thing. It is not this reflex.
+    assert reflex.check(CapabilityTarget("disk_usage"), good) != ""
+    assert reflex.answer(CapabilityTarget("disk_usage"), good) == ""
+
+
+def test_the_planner_drops_a_step_it_cannot_run_and_says_why(runtime) -> None:
+    """The reason reaches `notes`, so a dropped step is never silent.
+
+    The planner asks the resolver, not the tool registry: a step naming a
+    capability has to come back "unknown capability", never "unknown tool".
+    """
+    router = ModelRouter([FakeProvider("{}", stub=True)], ModelsConfig())
+    planner = Planner(router, runtime.registry, language="pl")
+
+    plan = planner._sanitise(
+        Plan(steps=[
+            PlanStep(key="a", target=CapabilityTarget("nie.ma.takiej")),
+            PlanStep(key="b", target=ToolTarget("note"), params={"text": "x"}),
+        ]),
+        Goal("cel"),
+    )
+
+    assert [s.target for s in plan.steps] == [ToolTarget("note")]
+    assert "nieznana zdolność" in plan.notes

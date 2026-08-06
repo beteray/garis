@@ -1,19 +1,22 @@
 # PlanStep → StepTarget — dokument projektowy migracji
 
-Status: **Etap A wykonany**, etapy B i C przed nami. Ten plik powstał przed
+Status: **Etapy A i B wykonane**, etap C przed nami. Ten plik powstał przed
 commitem 4 po to, żeby kontrakt był ustalony, zanim struktury zaczną się zmieniać
 w siedmiu miejscach naraz — i po ustaleniach §3.3 i §3.4 pozostaje wiążący.
 
 | Etap | Stan | Gdzie |
 |---|---|---|
 | A — model i zgodność | ✅ | `tests/test_step_target.py` |
-| B — przepięcie decyzji (`verify` → `report` → `reflex` → planner → CLI) | ⏳ | — |
+| B — przepięcie decyzji (reflex → verify → report → planner → CLI) | ✅ | `tests/test_target_resolver.py` |
 | C — usunięcie starego | ⏳ | — |
 
 Decyzje właściciela projektu, przyjęte przed Etapem A:
 
-- **§3.3** — jedna wspólna warstwa rozstrzygania kroku, wyprowadzona z logiki
-  `CapabilityRunner`. Żadnych osobnych implementacji w plannerze i w CLI.
+- **§3.3** — cienka warstwa nad `ResolvedTarget` (`runtime/resolve.py`),
+  **nie** wystawiony pierwszy krok runnera. Gdyby planner wołał do runnera,
+  kolejność szesnastu kroków stałaby się kontraktem publicznym i zmiana kroku 4
+  mogłaby przewrócić walidację planu. Żadnych osobnych implementacji w plannerze
+  i w CLI.
 - **§3.4** — zgodność przejściowa: API na zewnątrz trzyma `tool: str`, silnik w
   środku przechodzi na `StepTarget` i **głośno** przewraca się na ukrytym użyciu
   starej ścieżki.
@@ -365,17 +368,35 @@ Zrobione. Odstępstwa od planu, które wyszły dopiero przy pisaniu kodu:
 opisującej zachowanie produktu. Jeśli test zachowania wymaga zmiany, Etap A
 zrobił za dużo.
 
-### Etap B — przepięcie wykonania
+### Etap B — przepięcie decyzji ✅
 
-- `Runtime.perform_step`
-- `AgentLoop` buduje `StepTarget` i woła `perform_step`
-- `verify.py`, `report.py`, `reflex.check/answer` kluczują po `StepTarget`
-- wspólne rozstrzyganie kroku dla plannera i CLI (§3.3)
-- `Topic.TASK_STEP` niesie `target` obok `tool`
+Zrobione, w kolejności narzuconej przez ryzyko R1:
 
-**Kryterium wyjścia:** `ToolTarget` i `CapabilityTarget` wchodzą do pętli agenta
-tą samą drogą, udowodnione testem — analogicznie do testu z commitu 3 dla
-runnera.
+1. **`reflex.py`** — `Reflex.target: StepTarget`, `BY_TOOL` → `BY_TARGET`,
+   `check(target, value)` / `answer(target, value)`. Klucz to cel, nie napis,
+   więc zdolność o tej samej końcówce nazwy jest po prostu innym kluczem, a nie
+   trafieniem w nieistniejący wpis.
+2. **`verify.py`** — `_check_reflex` woła `reflex.check(e.target, …)`.
+3. **`report.py`** — `_measured_answer` woła `reflex.answer(item.target, …)`.
+4. **`planner.py`** — `_sanitise` i `_runs_here` przez `TargetResolver`;
+   konstruktor przyjmuje `resolver=`, domyślnie tylko-narzędziowy.
+5. **`cli.py --dry-run`** — podgląd skutków przez ten sam resolver. Wcześniej
+   czytał rejestr narzędzi wprost, więc o kroku ze zdolnością powiedziałby
+   „nie dotknie niczego".
+
+`app.build` składa jeden resolver znający oba katalogi i podaje go plannerowi;
+CLI sięga po `garis.planner.resolver`, żeby podgląd i planowanie odpowiadały tak
+samo.
+
+**Nowy moduł:** `runtime/resolve.py` — `ResolvedTarget` (`known`, `runs_here`,
+`reason`, `effects`, `validate`) i `TargetResolver`. Test strukturalny czyta jego
+źródło z pominięciem docstringów i przewraca się, jeśli pojawi się w nim runner,
+polityka, księga efektów albo cokolwiek asynchronicznego.
+
+**Czego Etap B nie zrobił:** planner nadal nie widzi zdolności w prompcie
+(R5) — to świadome. Bramka z R1 jest już zamknięta, więc odblokowanie ich w
+katalogu modelu jest teraz zmianą jednego miejsca, a nie skokiem na głęboką
+wodę.
 
 ### Etap C — usunięcie starego
 

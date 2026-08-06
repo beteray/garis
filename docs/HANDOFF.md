@@ -37,7 +37,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (530 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (541 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -55,6 +55,7 @@ core/src/garis/
   runtime/                                       JEDYNA koperta wykonania
     runner.py                                    CapabilityRunner: 16 kroków, jedna kolejność
     legacy.py                                    wykonawca narzędzi — tylko handler
+    resolve.py                                   co to za cel; odpowiada, nie wykonuje
     policy.py approvals.py audit.py leases.py    bramki, dokładnie raz każda
   capabilities/                                  zdolności z weryfikatorem i dowodami
     native.py                                    wykonawca zdolności — tylko executor
@@ -80,7 +81,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 530 passed
+.venv/bin/python -m pytest -q                 # 541 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -149,8 +150,12 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
     `reflex.check()` szuka nazwy w zwykłym słowniku i przy nieznanej zwraca „nie
     umiem sprawdzić", a nie wyjątek: cicha odpowiedź zamieniłaby zweryfikowany
     sukces w raportowaną porażkę. Do prozy, logów i API służy `.name`, które
-    odpowiada dla obu rodzajów. Szczegóły:
-    `docs/PLANSTEP_STEP_TARGET_DESIGN.md`.
+    odpowiada dla obu rodzajów. Na pytanie „czy ten krok da się uruchomić"
+    odpowiada **jedno** miejsce — `runtime/resolve.py` — a nie planner, CLI i
+    runner osobno; trzy definicje wykonalności to trzy definicje, które się
+    rozjadą. Resolver **nie wykonuje** i nie jest wystawionym krokiem runnera:
+    gdyby był, kolejność szesnastu kroków stałaby się kontraktem publicznym.
+    Szczegóły: `docs/PLANSTEP_STEP_TARGET_DESIGN.md`.
 7. **Cisza jest domyślna.** `ctx.progress()` do dziennika; `ctx.note()` tylko gdy
    człowiek naprawdę powinien to usłyszeć.
 8. **Raport buduje się z faktów** (`agent/report.py`), nie z modelu. Model nie
@@ -383,7 +388,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 530 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 541 testów, musi być zielone
 cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy

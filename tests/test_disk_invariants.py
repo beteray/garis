@@ -22,6 +22,7 @@ import sys
 import pytest
 
 from garis.agent import reflex
+from garis.kernel import ToolTarget
 from garis.tools.system import _disk_bytes, _memory_bytes
 
 
@@ -41,7 +42,7 @@ def test_the_measured_set_is_internally_consistent() -> None:
 def test_every_measured_disk_passes_its_own_validator(tmp_path) -> None:
     for target in ("/" if sys.platform != "win32" else "C:\\", str(tmp_path)):
         value = _disk_bytes(target)
-        assert reflex.check("disk_usage", value) == "", target
+        assert reflex.check(ToolTarget("disk_usage"), value) == "", target
 
 
 def test_a_percentage_that_contradicts_the_free_space_is_refused() -> None:
@@ -57,19 +58,19 @@ def test_a_percentage_that_contradicts_the_free_space_is_refused() -> None:
         "reserved": 0,
         "percent_used": 5.1,          # from blocks-in-use, not from `free`
     }
-    why = reflex.check("disk_usage", contradictory)
+    why = reflex.check(ToolTarget("disk_usage"), contradictory)
     assert "procent" in why
-    assert reflex.answer("disk_usage", contradictory) == ""
+    assert reflex.answer(ToolTarget("disk_usage"), contradictory) == ""
 
 
 def test_parts_that_do_not_add_up_are_refused() -> None:
     total = 100 * 1024**3
     free = 40 * 1024**3
-    assert reflex.check("disk_usage", {
+    assert reflex.check(ToolTarget("disk_usage"), {
         "total": total, "free": free, "used": 10 * 1024**3,
     }) == "zajęte + wolne nie sumuje się do pojemności"
 
-    assert reflex.check("disk_usage", {
+    assert reflex.check(ToolTarget("disk_usage"), {
         "total": total, "free": free, "used": total - free,
         "filesystem_used": 1024, "reserved": 1024,
     }) == "zajęte przez pliki + zarezerwowane nie sumuje się do zajętych"
@@ -77,7 +78,7 @@ def test_parts_that_do_not_add_up_are_refused() -> None:
 
 def test_small_nonsense_is_not_saved_by_the_rounding_allowance() -> None:
     """A megabyte of slack must not swallow a ten-byte disk with 99 bytes free."""
-    assert reflex.check("disk_usage", {"total": 10, "free": 99})
+    assert reflex.check(ToolTarget("disk_usage"), {"total": 10, "free": 99})
 
 
 def test_the_sentence_explains_space_that_is_free_but_not_available() -> None:
@@ -94,8 +95,8 @@ def test_the_sentence_explains_space_that_is_free_but_not_available() -> None:
         "used": total - free,
         "percent_used": round((total - free) / total * 100, 1),
     }
-    assert reflex.check("disk_usage", value) == ""
-    sentence = reflex.answer("disk_usage", value)
+    assert reflex.check(ToolTarget("disk_usage"), value) == ""
+    sentence = reflex.answer(ToolTarget("disk_usage"), value)
 
     assert "24,0 GB" in sentence and "252,0 GB" in sentence and "90%" in sentence
     # And the 215 GB that made the original reading unreadable is named.
@@ -109,7 +110,7 @@ def test_a_disk_with_no_quota_says_nothing_about_reservations() -> None:
     value = {"path": "D:\\", "total": total, "free": free, "used": total - free,
              "filesystem_used": total - free, "reserved": 0,
              "percent_used": round((total - free) / total * 100, 1)}
-    sentence = reflex.answer("disk_usage", value)
+    sentence = reflex.answer(ToolTarget("disk_usage"), value)
     assert "niedostępne" not in sentence
     assert sentence == "Na D:\\ zostało 100,0 GB z 500,0 GB — zajęte 80%."
 
@@ -118,7 +119,7 @@ def test_memory_numbers_are_consistent_too() -> None:
     value = _memory_bytes()
     if not value:                       # a host that will not tell us
         pytest.skip("brak psutil i /proc/meminfo")
-    assert reflex.check("memory_usage", value) == ""
+    assert reflex.check(ToolTarget("memory_usage"), value) == ""
     assert value["used"] == value["total"] - value["available"]
     assert abs(value["percent_used"] - value["used"] / value["total"] * 100) < 0.6
 
@@ -134,7 +135,7 @@ def test_windows_reads_the_quota_aware_numbers() -> None:  # pragma: no cover - 
     value = _disk_bytes("C:\\")
     assert value["total"] > 0
     assert value["free"] <= value["filesystem_free"]
-    assert reflex.check("disk_usage", value) == ""
+    assert reflex.check(ToolTarget("disk_usage"), value) == ""
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="ścieżka POSIX-owa")

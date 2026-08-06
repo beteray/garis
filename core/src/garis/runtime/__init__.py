@@ -13,6 +13,7 @@ from .executor import Runtime
 from .leases import Lease, LeaseManager, LeaseMode, app_key, device_key, file_key, host_key
 from .policy import Decision, PolicyEngine, Verdict
 from .registry import ParamSpec, ToolRegistry, ToolSpec
+from .resolve import ResolvedTarget, TargetResolver
 
 __all__ = [
     "Action",
@@ -29,7 +30,9 @@ __all__ = [
     "LeaseMode",
     "ParamSpec",
     "PolicyEngine",
+    "ResolvedTarget",
     "Runtime",
+    "TargetResolver",
     "ToolContext",
     "ToolRegistry",
     "ToolSpec",

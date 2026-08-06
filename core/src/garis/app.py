@@ -26,7 +26,15 @@ from .net import HttpClient
 from .notifications import NotificationGate
 from .paths import Paths
 from .profiles import ProfileContents, check_requested_doubles, inspect, validate
-from .runtime import ApprovalBroker, AuditLog, LeaseManager, PolicyEngine, Runtime, ToolRegistry
+from .runtime import (
+    ApprovalBroker,
+    AuditLog,
+    LeaseManager,
+    PolicyEngine,
+    Runtime,
+    TargetResolver,
+    ToolRegistry,
+)
 from .settings import SettingsService
 from .store import SCHEMA, Database
 from .tasks import TaskStore, TaskSupervisor
@@ -167,7 +175,12 @@ def build(
     providers = ProviderPool(router, config, vault=vault, http=http, bus=bus,
                              monitor=health, include_fake=include_fake)
     settings = SettingsService(config, paths, bus=bus)
-    planner = Planner(router, registry, memory=memory, language=config.identity.language or "pl")
+    planner = Planner(
+        router, registry, memory=memory, language=config.identity.language or "pl",
+        # One resolver, knowing both catalogues, shared by the planner and
+        # by `garis do --dry-run`.
+        resolver=TargetResolver(registry, CAPABILITIES),
+    )
     verifier = Verifier(router, language=config.identity.language or "pl")
 
     store = TaskStore(db)

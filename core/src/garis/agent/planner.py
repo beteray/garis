@@ -16,9 +16,10 @@ import json
 from typing import Any
 
 from ..errors import ProviderError
+from ..kernel.contracts import StepTarget
 from ..memory import MemoryService
 from ..models import Job, Message, ModelRouter, Need, Privacy
-from ..runtime import ToolRegistry
+from ..runtime import TargetResolver, ToolRegistry
 from . import reflex
 from .goal import MAX_STEPS, Goal, Plan, PlanStep
 
@@ -79,11 +80,16 @@ class Planner:
         *,
         memory: MemoryService | None = None,
         language: str = "pl",
+        resolver: TargetResolver | None = None,
     ) -> None:
         self.router = router
         self.registry = registry
         self.memory = memory
         self.language = language
+        # Whoever assembles the process passes a resolver that knows about
+        # capabilities too. Defaulting to a tools-only one keeps every existing
+        # caller working and never invents a catalogue of its own.
+        self.resolver = resolver or TargetResolver(registry)
 
     # ------------------------------------------------------------------ prompts
 
@@ -183,8 +189,8 @@ class Planner:
             raise ProviderError(f"Plan nie jest obiektem JSON: {type(data).__name__}")
         return Plan.from_dict(data)
 
-    def _runs_here(self, tool: str) -> bool:
-        return self.registry.has(tool) and self.registry.get(tool).supported_here()
+    def _runs_here(self, target: StepTarget) -> bool:
+        return self.resolver.executable(target)
 
     # ---------------------------------------------------------------- validation
 
@@ -198,19 +204,14 @@ class Planner:
         problems: list[str] = []
 
         for step in plan.steps:
-            if not self.registry.has(step.tool):
-                problems.append(f"nieznane narzędzie {step.tool!r} — krok pominięty")
-                continue
-            spec = self.registry.get(step.tool)
-            if not spec.supported_here():
-                problems.append(
-                    f"{step.tool} nie działa na tym systemie — krok pominięty"
-                )
+            resolved = self.resolver.resolve(step.target)
+            if not resolved.executable:
+                problems.append(f"{resolved.reason} — krok pominięty")
                 continue
             try:
-                step.params = spec.validate(step.params)
+                step.params = resolved.validate(step.params)
             except Exception as exc:
-                problems.append(f"{step.tool}: {exc}")
+                problems.append(f"{step.name}: {exc}")
                 continue
             kept.append(step)
 

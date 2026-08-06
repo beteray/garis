@@ -57,7 +57,7 @@ async def test_goal_becomes_a_verified_result(runtime: Runtime, bus, config: Con
     assert outcome.state is AgentState.DONE
     assert outcome.report.verified
     assert outcome.report.short.startswith("Gotowe:")
-    assert [e.tool for e in outcome.evidence] == ["look", "note"]
+    assert [e.name for e in outcome.evidence] == ["look", "note"]
     assert not outcome.report.problems
 
 
@@ -84,7 +84,7 @@ async def test_invented_tool_is_dropped_before_execution(
             ]),
     )
     outcome = await loop.run(Goal("zrób coś"), task_id="t")
-    assert [e.tool for e in outcome.evidence] == ["look"]
+    assert [e.name for e in outcome.evidence] == ["look"]
     assert "teleport" in outcome.plan.notes
 
 
@@ -136,7 +136,7 @@ async def test_a_dead_end_makes_the_agent_change_method(
     outcome = await loop.run(Goal("osiągnij cel jakkolwiek"), task_id="t")
 
     assert outcome.state is AgentState.DONE
-    assert any(e.tool == "look" and e.ok for e in outcome.evidence)
+    assert any(e.name == "look" and e.ok for e in outcome.evidence)
     assert "zmieniałem metodę" in outcome.report.short
 
 

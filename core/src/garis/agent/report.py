@@ -185,7 +185,7 @@ def _measured_answer(done: list[StepEvidence]) -> str:
     goal, which at least does not claim more than it knows.
     """
     for item in done:
-        sentence = reflex.answer(item.tool, item.value)
+        sentence = reflex.answer(item.target, item.value)
         if sentence:
             return sentence
     return ""

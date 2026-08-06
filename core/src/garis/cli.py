@@ -82,8 +82,10 @@ async def cmd_do(garis: Garis, args: argparse.Namespace) -> int:
         _out(describe_plan(plan))
         effects: set[str] = set()
         for step in plan.steps:
-            if garis.registry.has(step.tool):
-                effects |= {e.label_pl for e in garis.registry.get(step.tool).effects}
+            # Through the resolver, so the preview describes capabilities too.
+            # Reading the tool registry directly used to say "touches nothing"
+            # about a step that touches something.
+            effects |= {e.label_pl for e in garis.planner.resolver.resolve(step.target).effects}
         if effects:
             _out(_dim("Dotknie: " + ", ".join(sorted(effects))))
         return EXIT_OK

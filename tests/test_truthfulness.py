@@ -57,7 +57,7 @@ async def test_disk_question_runs_a_real_disk_inspection(garis) -> None:
 
     assert task.state is TaskState.FINISHED, task.error
     steps = garis.tasks.store.steps_for(task.id)
-    assert [s.tool for s in steps] == ["disk_usage"], "inne narzędzie niż odczyt dysku"
+    assert [s.name for s in steps] == ["disk_usage"], "inne narzędzie niż odczyt dysku"
     assert steps[0].state.value == "done"
 
     # The numbers in the record are this machine's, not a fixture's.
@@ -81,7 +81,7 @@ async def test_the_disk_answer_is_built_from_the_numbers_that_came_back() -> Non
     value = {"path": "C:\\", "total": total, "free": free, "used": total - free,
              "filesystem_used": total - free, "reserved": 0,
              "percent_used": round((total - free) / total * 100, 1)}
-    sentence = reflex.answer("disk_usage", value)
+    sentence = reflex.answer(ToolTarget("disk_usage"), value)
     assert "78,7 GB" in sentence and "476,0 GB" in sentence
     assert "83%" in sentence
 
@@ -90,8 +90,9 @@ async def test_a_disk_reading_that_makes_no_sense_is_not_verified() -> None:
     """10. Empty or impossible output cannot pass as a verified measurement."""
     for broken in ({}, {"path": "C:"}, {"total": 0, "free": 0},
                    {"total": 10, "free": 99}, None, "brak"):
-        assert reflex.check("disk_usage", broken), f"puste dane uznane za dobre: {broken!r}"
-        assert reflex.answer("disk_usage", broken) == ""
+        assert reflex.check(ToolTarget("disk_usage"), broken), \
+            f"puste dane uznane za dobre: {broken!r}"
+        assert reflex.answer(ToolTarget("disk_usage"), broken) == ""
 
 
 # --------------------------------------------------------- no model configured
@@ -119,7 +120,7 @@ async def test_no_provider_still_answers_a_local_question(runtime, bus, config) 
     outcome = await loop.run(Goal("ile miejsca zostało na dysku?"), task_id="t")
 
     assert outcome.state is AgentState.DONE
-    assert [e.tool for e in outcome.evidence] == ["disk_usage"]
+    assert [e.name for e in outcome.evidence] == ["disk_usage"]
     assert outcome.report.verified, "odczyt zweryfikowany deterministycznie"
     assert outcome.verification and outcome.verification.checked_by == "rules"
     assert "GB" in outcome.report.short
@@ -268,7 +269,7 @@ def test_the_disk_reflex_is_reachable_from_the_words_people_use() -> None:
         "how much free space is left on disk",
     ):
         found = reflex.find(phrasing)
-        assert found is not None and found.tool == "disk_usage", phrasing
+        assert found is not None and found.target == ToolTarget("disk_usage"), phrasing
 
     for other in ("zainstaluj 7-zip", "wyślij fakturę", "cześć"):
         assert reflex.find(other) is None, other
@@ -294,8 +295,8 @@ def test_a_temp_directory_is_measured_not_guessed(tmp_path: Path) -> None:
     truth = shutil.disk_usage(tmp_path)
     assert value["total"] == truth.total
     assert value["free"] == truth.free
-    assert reflex.check("disk_usage", value) == ""
+    assert reflex.check(ToolTarget("disk_usage"), value) == ""
 
-    sentence = reflex.answer("disk_usage", value)
+    sentence = reflex.answer(ToolTarget("disk_usage"), value)
     assert str(tmp_path) in sentence
     assert f"{truth.free / 1024 ** 3:.1f}".replace(".", ",") in sentence

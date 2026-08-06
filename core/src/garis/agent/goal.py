@@ -70,10 +70,11 @@ class PlanStep:
 
         Deliberately raises for a capability instead of returning its id. A
         property that quietly answered `windows.process.list` here would let
-        tool-keyed logic — `reflex.check` above all — look up a name it has never
-        heard of and conclude the result cannot be verified. That failure is
-        silent, survives the type checker and turns a checked success into a
-        reported failure. Callers that only need a label want `name`.
+        name-keyed logic look up something it has never heard of and conclude
+        the result cannot be verified — a failure that is silent, survives the
+        type checker, and turns a checked success into a reported one that
+        failed. `reflex` keys on the target itself now; this stays loud for
+        whatever has not been converted yet. Callers wanting a label want `name`.
         """
         if isinstance(self.target, ToolTarget):
             return self.target.tool

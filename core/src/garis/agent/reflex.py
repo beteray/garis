@@ -31,7 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..kernel.contracts import ToolTarget
+from ..kernel.contracts import StepTarget, ToolTarget
 from ..text import fold
 from .goal import Goal, Plan, PlanStep
 
@@ -43,7 +43,11 @@ class Reflex:
     """One question this machine can answer about itself."""
 
     name: str
-    tool: str
+    #: What answers this question — a legacy tool today, a capability once one
+    #: exists for the same measurement. Keyed on the target rather than on its
+    #: name so that repointing a reflex cannot silently miss: an unknown *name*
+    #: returns "I cannot check this", an unknown *target* is simply absent.
+    target: StepTarget
     purpose: str
     #: Every group must contribute a word — "ile miejsca na dysku" needs both a
     #: quantity word and a disk word, or "wyślij plik na dysk" would match.
@@ -353,7 +357,7 @@ _NOW = frozenset({"teraz", "jest", "obecnie", "now", "current", "aktualnie"})
 REFLEXES: tuple[Reflex, ...] = (
     Reflex(
         name="disk-space",
-        tool="disk_usage",
+        target=ToolTarget("disk_usage"),
         purpose="Odczyt wolnego miejsca na dysku",
         needs=(_DISK, _QUANTITY),
         validate=_validate_disk,
@@ -361,7 +365,7 @@ REFLEXES: tuple[Reflex, ...] = (
     ),
     Reflex(
         name="memory",
-        tool="memory_usage",
+        target=ToolTarget("memory_usage"),
         purpose="Odczyt zajętości pamięci",
         needs=(_MEMORY, _QUANTITY),
         validate=_validate_memory,
@@ -371,7 +375,7 @@ REFLEXES: tuple[Reflex, ...] = (
         # Before the general one: "czy Discord działa" also contains "dziala",
         # and the two must not race.
         name="process-named",
-        tool="process_find",
+        target=ToolTarget("process_find"),
         purpose="Sprawdzenie, czy dany program działa",
         needs=(_IS_IT, _RUNNING),
         validate=_validate_processes,
@@ -380,7 +384,7 @@ REFLEXES: tuple[Reflex, ...] = (
     ),
     Reflex(
         name="process-list",
-        tool="process_find",
+        target=ToolTarget("process_find"),
         purpose="Odczyt listy działających procesów",
         needs=(_PROCESSES, _SHOW),
         validate=_validate_processes,
@@ -388,7 +392,7 @@ REFLEXES: tuple[Reflex, ...] = (
     ),
     Reflex(
         name="system-info",
-        tool="system_info",
+        target=ToolTarget("system_info"),
         purpose="Odczyt informacji o systemie",
         needs=(_SYSTEM, _WHAT),
         validate=_validate_system,
@@ -396,7 +400,7 @@ REFLEXES: tuple[Reflex, ...] = (
     ),
     Reflex(
         name="clock",
-        tool="current_time",
+        target=ToolTarget("current_time"),
         purpose="Odczyt czasu lokalnego",
         needs=(_TIME, _NOW),
         validate=_validate_time,
@@ -404,7 +408,7 @@ REFLEXES: tuple[Reflex, ...] = (
     ),
 )
 
-BY_TOOL: dict[str, Reflex] = {r.tool: r for r in REFLEXES}
+BY_TARGET: dict[StepTarget, Reflex] = {r.target: r for r in REFLEXES}
 
 
 def _words(text: str) -> set[str]:
@@ -426,18 +430,20 @@ def find(goal: Goal | str) -> Reflex | None:
     return None
 
 
-def plan_for(goal: Goal | str, *, available: Callable[[str], bool] | None = None) -> Plan | None:
+def plan_for(
+    goal: Goal | str, *, available: Callable[[StepTarget], bool] | None = None
+) -> Plan | None:
     """A one-step plan for a question this machine can answer about itself.
 
-    `available` decides whether the tool exists and runs here — passed in rather
-    than imported, because the agent layer must not reach into the registry to
-    ask a question the caller already knows the answer to.
+    `available` decides whether the target exists and runs here — passed in
+    rather than imported, because the agent layer must not reach into a registry
+    to ask a question the caller already knows the answer to.
     """
     text = goal.text if isinstance(goal, Goal) else goal
     reflex = find(goal)
     if reflex is None:
         return None
-    if available is not None and not available(reflex.tool):
+    if available is not None and not available(reflex.target):
         return None
 
     params = dict(reflex.params)
@@ -454,7 +460,7 @@ def plan_for(goal: Goal | str, *, available: Callable[[str], bool] | None = None
         steps=[
             PlanStep(
                 key=reflex.name,
-                target=ToolTarget(reflex.tool),
+                target=reflex.target,
                 params=params,
                 purpose=reflex.purpose,
                 expects="zmierzone wartości",
@@ -464,20 +470,20 @@ def plan_for(goal: Goal | str, *, available: Callable[[str], bool] | None = None
     )
 
 
-def check(tool: str, value: Any) -> str:
-    """"" when the tool's output is a usable measurement, else why it is not."""
-    reflex = BY_TOOL.get(tool)
+def check(target: StepTarget, value: Any) -> str:
+    """"" when the step's output is a usable measurement, else why it is not."""
+    reflex = BY_TARGET.get(target)
     if reflex is None:
-        return f"nie umiem sprawdzić wyniku narzędzia {tool}"
+        return f"nie umiem sprawdzić wyniku kroku {target.name}"
     return reflex.validate(value)
 
 
-def answer(tool: str, value: Any) -> str:
+def answer(target: StepTarget, value: Any) -> str:
     """The sentence to show, built from the measured values. Empty if unusable."""
-    reflex = BY_TOOL.get(tool)
+    reflex = BY_TARGET.get(target)
     if reflex is None or reflex.validate(value):
         return ""
     return reflex.present(value)
 
 
-__all__ = ["BY_TOOL", "ORIGIN", "REFLEXES", "Reflex", "answer", "check", "find", "plan_for"]
+__all__ = ["BY_TARGET", "ORIGIN", "REFLEXES", "Reflex", "answer", "check", "find", "plan_for"]

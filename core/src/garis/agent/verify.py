@@ -83,9 +83,10 @@ class StepEvidence:
     def tool(self) -> str:
         """The legacy tool name, and only that. Raises for a capability.
 
-        Same reason as `PlanStep.tool`: the tool-keyed checks below must not be
-        handed a capability id they cannot resolve. Until they key on `target`,
-        a capability reaching them is a bug and has to say so.
+        Same reason as `PlanStep.tool`. The checks in this module key on
+        `target` now, so nothing here calls it — it stays loud for the callers
+        that still ask, because answering with a capability id would let one of
+        them look up a name no reflex has ever heard of.
         """
         if isinstance(self.target, ToolTarget):
             return self.target.tool
@@ -201,9 +202,9 @@ class Verifier:
     @staticmethod
     def _check_reflex(ran: list[StepEvidence]) -> Verification:
         problems = [
-            f"{e.tool}: {why}"
+            f"{e.name}: {why}"
             for e in ran
-            if (why := reflex.check(e.tool, e.value))
+            if (why := reflex.check(e.target, e.value))
         ]
         if problems:
             return Verification(
