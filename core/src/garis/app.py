@@ -20,6 +20,7 @@ from .events import EventBus
 from .kernel.contracts import RuntimeProfile
 from .kernel.effects import EffectStore
 from .kernel.outbox import EventOutbox
+from .kernel.recovery import RecoveryStore
 from .memory import MemoryService
 from .models import HealthMonitor, ModelRouter, ProviderPool, build_router
 from .net import HttpClient
@@ -35,6 +36,7 @@ from .runtime import (
     TargetResolver,
     ToolRegistry,
 )
+from .runtime.recovery import EffectRecoveryService
 from .settings import SettingsService
 from .store import SCHEMA, Database
 from .tasks import TaskStore, TaskSupervisor
@@ -65,6 +67,7 @@ class Garis:
     settings: SettingsService
     providers: ProviderPool
     conversation: Conversation
+    recovery: EffectRecoveryService
     profile: RuntimeProfile = RuntimeProfile.PRODUCTION
     contents: ProfileContents | None = None
 
@@ -183,8 +186,15 @@ def build(
     )
     verifier = Verifier(router, language=config.identity.language or "pl")
 
+    recovery = EffectRecoveryService(
+        effects=effects, recoveries=RecoveryStore(db), runner=runtime.runner,
+        resolver=TargetResolver(registry, CAPABILITIES), capabilities=CAPABILITIES,
+        audit=audit, outbox=outbox,
+    )
+
     store = TaskStore(db)
-    tasks = TaskSupervisor(store, runtime, planner, verifier, bus=bus, config=config)
+    tasks = TaskSupervisor(store, runtime, planner, verifier, bus=bus, config=config,
+                           recovery=recovery)
     conversation = Conversation(tasks, router, registry, config, bus=bus)
 
     # The gate is what makes ctx.note() honest: tools raise candidates, and this
@@ -204,7 +214,7 @@ def build(
         http=http, registry=registry, runtime=runtime, router=router,
         planner=planner, verifier=verifier, tasks=tasks,
         notifications=notifications, voice=voice, settings=settings,
-        providers=providers, conversation=conversation,
+        providers=providers, conversation=conversation, recovery=recovery,
         profile=profile, contents=contents,
     )
 

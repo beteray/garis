@@ -24,7 +24,7 @@ from garis.capabilities import fixtures
 from garis.capabilities.native import NativeCapabilityExecutor
 from garis.capabilities.registry import REGISTRY, CapabilityRegistry
 from garis.errors import ConfigError, GarisError
-from garis.kernel.contracts import EffectDisposition
+from garis.kernel.contracts import CapabilityTarget, EffectDisposition
 from garis.kernel.effects import EffectState, EffectStore
 from garis.kernel.outbox import EventOutbox
 from garis.kernel.recovery import RecoveryStatus, RecoveryStore
@@ -518,3 +518,181 @@ def test_the_synthetic_capabilities_cannot_reach_production() -> None:
 
 def test_every_synthetic_capability_is_marked_as_one() -> None:
     assert all(c.fixture for c in fixtures.ALL)
+
+
+# ------------------------------------------------- resuming a crashed task
+
+
+@pytest.fixture
+def supervisor(runtime, bus, config, db, service, catalogue):
+    """A supervisor that knows how to inspect before it resumes."""
+    from garis.agent import Planner, Verifier
+    from garis.config import ModelsConfig
+    from garis.models import ModelRouter
+    from garis.models.providers.fake import FakeProvider
+    from garis.tasks import TaskStore, TaskSupervisor
+
+    router = ModelRouter([FakeProvider("{}", stub=True)], ModelsConfig(), bus=bus)
+    store = TaskStore(db)
+    return TaskSupervisor(
+        store, runtime, Planner(router, runtime.registry), Verifier(router),
+        bus=bus, config=config, recovery=service,
+    )
+
+
+def parked(store, db, capability_id: str, *, wanted: int = 30):
+    """A task that was running when the process died, with one uncertain effect."""
+    from garis.tasks.models import TaskRecord, TaskState
+
+    task = TaskRecord.new("ustaw poziom")
+    store.create(task)
+    store.set_state(task.id, TaskState.RUNNING)
+    effects = EffectStore(db)
+    effects.reserve("eff-1", capability_id=capability_id, task_id=task.id,
+                    step_key="set", args={"level": wanted})
+    effects.sweep_unsettled()
+    with db.transaction() as conn:
+        conn.execute("UPDATE effects SET outcome = ? WHERE effect_id = ?",
+                     (json.dumps({"requested": wanted}), "eff-1"))
+    return task
+
+
+async def test_a_resumed_task_looks_before_it_moves(supervisor, db) -> None:
+    """The scenario the whole phase is for.
+
+    GARIS set the volume, died before writing it down, and came back. It must
+    read the level, not set it a second time.
+    """
+    task = parked(supervisor.store, db, "fixture.level.set")
+    fixtures.WORLD["level"] = 30
+
+    ran: list[str] = []
+    original = fixtures.SET_LEVEL.executor
+
+    async def watched(invocation):
+        ran.append(invocation.capability)
+        return await original(invocation)
+
+    object.__setattr__(fixtures.SET_LEVEL, "executor", watched)
+    try:
+        await supervisor.recover()
+    finally:
+        object.__setattr__(fixtures.SET_LEVEL, "executor", original)
+
+    assert ran == [], "wznowienie powtórzyło operację"
+    assert RecoveryStore(db).latest("eff-1").status is RecoveryStatus.RESOLVED_GOAL_ONLY
+    assert supervisor.store.require(task.id).state.value != "blocked"
+
+
+async def test_a_task_whose_effect_cannot_be_settled_stays_blocked(supervisor, db) -> None:
+    task = parked(supervisor.store, db, "fixture.level.set_blind")
+
+    await supervisor.recover()
+
+    record = supervisor.store.require(task.id)
+    assert record.state.value == "blocked"
+    assert record.error, "zadanie zablokowane bez powodu nic nie mówi"
+
+
+async def test_a_recovered_not_applied_blocks_rather_than_repeating(supervisor, db) -> None:
+    """Proven untouched — and reached second-hand, so a person decides."""
+    task = parked(supervisor.store, db, "fixture.level.set")
+    fixtures.WORLD["level"] = 5
+
+    await supervisor.recover()
+
+    assert supervisor.store.require(task.id).state.value == "blocked"
+    assert EffectStore(db).load("eff-1").retry_requires_confirmation
+
+
+async def test_a_supervisor_without_recovery_still_cannot_repeat(runtime, bus, config, db) -> None:
+    """The reservation refuses it even with no recovery service wired in."""
+    from garis.agent import Planner, Verifier
+    from garis.config import ModelsConfig
+    from garis.models import ModelRouter
+    from garis.models.providers.fake import FakeProvider
+    from garis.tasks import TaskStore, TaskSupervisor
+
+    router = ModelRouter([FakeProvider("{}", stub=True)], ModelsConfig(), bus=bus)
+    store = TaskStore(db)
+    supervisor = TaskSupervisor(
+        store, runtime, Planner(router, runtime.registry), Verifier(router),
+        bus=bus, config=config,
+    )
+    parked(store, db, "fixture.level.set")
+
+    assert supervisor.recovery is None
+    assert not EffectStore(db).reserve(
+        "eff-1", capability_id="fixture.level.set", task_id="t", step_key="set",
+        args={"level": 30},
+    ).granted
+
+
+async def test_a_model_verdict_cannot_overturn_a_measurement(service, db) -> None:
+    """The deterministic verdict is the one that persists.
+
+    A goal-level verifier runs later, on a model, and may well say "looks fine".
+    It writes to the report, never to the effect: the measurement stays.
+    """
+    crashed(db, "fixture.level.set_missed")
+    fixtures.WORLD["level"] = 33
+    await service.reconcile("eff-1")
+
+    before = EffectStore(db).load("eff-1").verification
+
+    from garis.agent.goal import Goal
+    from garis.agent.verify import StepEvidence, Verifier
+    from garis.config import ModelsConfig
+    from garis.models import ModelRouter
+    from garis.models.providers.fake import FakeProvider
+
+    router = ModelRouter([FakeProvider('{"ok": true}', stub=False)], ModelsConfig())
+    await Verifier(router).check(
+        Goal("ustaw poziom na 30"),
+        [StepEvidence(target=CapabilityTarget("fixture.level.set"), purpose="",
+                      ok=True, expects="30", summary="33")],
+    )
+
+    assert EffectStore(db).load("eff-1").verification == before
+
+
+# ----------------------------------------------------------------------- CLI
+
+
+async def test_the_cli_reconciles_through_the_service(garis, monkeypatch) -> None:
+    """`garis effects reconcile` is the production path, not a shortcut."""
+    import argparse
+
+    from garis import cli
+
+    called: list[str] = []
+
+    async def spy(effect_id: str):
+        called.append(effect_id)
+        return await original(effect_id)
+
+    original = garis.recovery.reconcile
+    monkeypatch.setattr(garis.recovery, "reconcile", spy)
+
+    effects = garis.runtime.effects
+    effects.reserve("eff-1", capability_id="windows.process.list", args={})
+    effects.sweep_unsettled()
+
+    code = await cli.cmd_effect_reconcile(garis, argparse.Namespace(id="eff-1"))
+
+    assert called == ["eff-1"]
+    assert code in (0, 2)
+
+
+async def test_the_cli_lists_what_it_is_unsure_about(garis, capsys) -> None:
+    import argparse
+
+    from garis import cli
+
+    effects = garis.runtime.effects
+    effects.reserve("eff-1", capability_id="windows.process.list", args={})
+    effects.sweep_unsettled()
+
+    await cli.cmd_effects(garis, argparse.Namespace(uncertain=True, task=""))
+
+    assert "eff-1" in capsys.readouterr().out

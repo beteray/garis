@@ -197,6 +197,80 @@ async def cmd_task(garis: Garis, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# ---------------------------------------------------------------------- effects
+
+
+async def cmd_effects(garis: Garis, args: argparse.Namespace) -> int:
+    """What GARIS did to the world, and what it is not sure about."""
+    records = garis.recovery.uncertain()
+    if not args.uncertain:
+        records = garis.runtime.effects.for_task(args.task) if args.task else records
+    if not records:
+        _out("Nie ma efektów, co do których mam wątpliwości.")
+        return EXIT_OK
+    for effect in records:
+        mark = "?" if effect.state.value == "uncertain" else "·"
+        _out(f"{mark} {effect.effect_id}  {effect.capability_id}"
+             f" {_dim(effect.disposition.value)}")
+    return EXIT_OK
+
+
+async def cmd_effect_show(garis: Garis, args: argparse.Namespace) -> int:
+    effect = garis.runtime.effects.load(args.id)
+    if effect is None:
+        _out(f"Nie znam efektu {args.id}.")
+        return EXIT_ERROR
+
+    _out(_bold(effect.capability_id))
+    _out(_dim(f"{effect.effect_id} · {effect.state.value}"
+              f" · skutek: {effect.disposition.value}"))
+    if effect.verification:
+        verdict = effect.verification
+        _out(f"Cel osiągnięty: {'tak' if verdict.get('goal_met') else 'nie'}"
+             f" · sprawdzone: {'tak' if verdict.get('checked') else 'nie'}")
+        if verdict.get("reason"):
+            _out(_dim(verdict["reason"]))
+
+    _out()
+    if garis.recovery.can_recover(effect):
+        _out("Umiem to sprawdzić: `garis effects reconcile " + effect.effect_id + "`")
+    elif effect.state.value == "uncertain":
+        _out("Nie umiem tego sprawdzić automatycznie — musisz ocenić sam.")
+    if effect.retry_requires_confirmation:
+        _out("Ponowienie wymaga Twojej decyzji.")
+
+    history = garis.recovery.recoveries.history(effect.effect_id)
+    if history:
+        _out()
+        _out(_bold("Próby ustalenia:"))
+        for attempt in history:
+            _out(f"  {attempt.attempt_number}. {attempt.status.value}"
+                 f" {_dim(attempt.inspector)}")
+            if attempt.reason:
+                _out(_dim(f"     {attempt.reason}"))
+    return EXIT_OK
+
+
+async def cmd_effect_reconcile(garis: Garis, args: argparse.Namespace) -> int:
+    """Look at the world. Never repeat the operation."""
+    effect = garis.runtime.effects.load(args.id)
+    if effect is None:
+        _out(f"Nie znam efektu {args.id}.")
+        return EXIT_ERROR
+
+    outcome = await garis.recovery.reconcile(args.id)
+    _out(_bold(outcome.status.value))
+    if outcome.reason:
+        _out(outcome.reason)
+    _out(_dim(f"skutek: {outcome.disposition.value}"
+              f" · cel: {'osiągnięty' if outcome.verification.goal_met else 'nieosiągnięty'}"
+              f" · sprawdzone: {'tak' if outcome.verification.checked else 'nie'}"))
+    if outcome.status.needs_person:
+        _out("Ta decyzja należy do Ciebie.")
+        return EXIT_BLOCKED
+    return EXIT_OK
+
+
 async def cmd_stop(garis: Garis, args: argparse.Namespace) -> int:
     stopped = garis.tasks.stop(args.id)
     _out("Zatrzymane." if stopped else "To zadanie już nie działa.")
@@ -536,6 +610,25 @@ def build_parser() -> argparse.ArgumentParser:
     task.add_argument("id")
     task.add_argument("--audit", action="store_true", help="Dołącz dziennik audytu")
     task.set_defaults(handler=cmd_task)
+
+    effects = sub.add_parser("effects", help="Co zmieniłem w świecie")
+    effects_sub = effects.add_subparsers(dest="effects_command", required=True)
+
+    listing = effects_sub.add_parser("list", help="Lista efektów")
+    listing.add_argument("--uncertain", action="store_true",
+                         help="Tylko te, co do których nie mam pewności")
+    listing.add_argument("--task", default="", help="Efekty jednego zadania")
+    listing.set_defaults(handler=cmd_effects)
+
+    show = effects_sub.add_parser("show", help="Szczegóły efektu")
+    show.add_argument("id")
+    show.set_defaults(handler=cmd_effect_show)
+
+    reconcile = effects_sub.add_parser(
+        "reconcile", help="Sprawdź, co naprawdę się stało (nie powtarza operacji)"
+    )
+    reconcile.add_argument("id")
+    reconcile.set_defaults(handler=cmd_effect_reconcile)
 
     stop = sub.add_parser("stop", help="Zatrzymaj zadanie")
     stop.add_argument("id")

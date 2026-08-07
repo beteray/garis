@@ -24,7 +24,9 @@ from ..agent import AgentLoop, AgentState, Outcome, Planner, Verifier
 from ..config import Config
 from ..errors import TaskAborted
 from ..events import EventBus, Topic
+from ..kernel.recovery import RecoveryStatus
 from ..runtime import ActionResult, Runtime
+from ..runtime.recovery import EffectRecoveryService
 from ..store import dumps
 from .models import StepRecord, TaskRecord, TaskState
 from .store import TaskStore
@@ -59,10 +61,15 @@ class TaskSupervisor:
         *,
         bus: EventBus,
         config: Config,
+        recovery: EffectRecoveryService | None = None,
     ) -> None:
         self.store = store
         self.bus = bus
         self.config = config
+        #: Optional so every existing caller keeps working. Without it a resumed
+        #: task simply proceeds as before — it still cannot repeat an uncertain
+        #: effect, because `EffectRecord.repeatable` refuses the reservation.
+        self.recovery = recovery
         self.loop = AgentLoop(
             runtime, planner, verifier, bus=bus, config=config,
             journal=_StoreJournal(store),
@@ -189,12 +196,48 @@ class TaskSupervisor:
         are kept, its unfinished step is retried, and it resumes as if nothing
         happened. Anything BLOCKED stays put — it is correctly waiting for the
         user, restarting it would only repeat the same question.
+
+        Before any of that, uncertain effects get looked at. A task that died
+        mid-action must not be handed back to the loop while nobody knows
+        whether its last step touched the world — the loop's job is to make
+        progress, and progress over an unresolved effect is the repeat this
+        whole layer exists to prevent. Recovery only ever *inspects*; a task it
+        cannot settle stays blocked instead of resuming.
         """
         recovered = self.store.recover_incomplete()
         for task in recovered:
+            if not await self._settle_uncertain(task):
+                self._block(task, "Nie wiem, czy poprzednia operacja doszła do skutku.")
+                continue
             self.bus.emit(Topic.TASK_STARTED, task_id=task.id, goal=task.goal, resumed=True)
             self._launch(task.id)
         return recovered
+
+    async def _settle_uncertain(self, task: TaskRecord) -> bool:
+        """Whether this task may resume. Inspects; never repeats.
+
+        Returns False when anything is left that only a person can decide. The
+        verdict comes from the deterministic reconciler and is not open to
+        revision by the goal-level verifier later — a model saying "looks done"
+        must not overturn a measurement.
+        """
+        if self.recovery is None:
+            return True
+        for effect in self.recovery.uncertain(task.id):
+            if not self.recovery.can_recover(effect):
+                return False
+            outcome = await self.recovery.reconcile(effect.effect_id)
+            if not outcome.resolved:
+                return False
+            if outcome.status is RecoveryStatus.RESOLVED_NOT_APPLIED:
+                # Proven untouched, and reached second-hand. The step may be
+                # done again — by someone who says so, not by this resume.
+                return False
+        return True
+
+    def _block(self, task: TaskRecord, question: str) -> None:
+        self.store.set_state(task.id, TaskState.BLOCKED, error=question)
+        self.bus.emit(Topic.TASK_BLOCKED, task_id=task.id, question=question)
 
     # -------------------------------------------------------------------- read
 
