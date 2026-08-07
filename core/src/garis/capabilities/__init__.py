@@ -7,7 +7,10 @@ may call a capability by id whether or not it is on the menu.
 
 from __future__ import annotations
 
-from . import processes  # noqa: F401 - imported for its registrations
+from . import (
+    audio,  # noqa: F401 - imported for its registrations
+    processes,  # noqa: F401 - imported for its registrations
+)
 from .base import (
     Capability,
     Field,

@@ -28,6 +28,12 @@ windows = [
     "psutil>=5.9",
     "pillow>=10.2",
     "pyautogui>=0.9.54",
+    # Windows Core Audio. `pycaw` wraps IAudioEndpointVolume; `comtypes` is its
+    # own dependency but is listed too, because `capabilities/audio.py` calls
+    # `CoInitialize` directly — a COM apartment belongs to the thread that opens
+    # it, and the read runs in a worker.
+    "pycaw>=20240210",
+    "comtypes>=1.4",
 ]
 dev = [
     "pytest>=8.0",
