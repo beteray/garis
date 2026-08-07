@@ -30,7 +30,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 553 testów |
+| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 591 testów |
 | **Jedna koperta wykonania** — narzędzie i zdolność wchodzą w to samo `CapabilityRunner.run` | ✅ | `test_runner.py` — test strukturalny czyta źródło `Runtime.perform` |
 | Jedna decyzja polityki, jeden wpis audytu, jeden efekt na wywołanie | ✅ | `test_runner.py` — liczniki na prawdziwym `PolicyEngine` |
 | Odmowa polityki i odmowa użytkownika nie zostawiają śladu w świecie | ✅ | `test_effect_safety.py` |
@@ -38,6 +38,10 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | „Nie udało się" ≠ „nic się nie stało" — 4 dyspozycje efektu | ✅ | `test_effect_safety.py` — wyjątek nigdy nie dowodzi braku skutku |
 | Sprawdzona porażka celu nie zmienia się w sukces przy odtworzeniu | ✅ | `test_effect_safety.py` — pełny werdykt zapisany i odtwarzany |
 | Rozliczenie efektu, audyt i zdarzenie w jednej transakcji | ✅ | `test_runner.py`, `test_effects.py` |
+| Po awarii GARIS **ogląda** świat zamiast powtarzać operację | ✅ | `test_recovery.py` — na atrapach, nie na Windows |
+| „Cel osiągnięty" nie zamienia się w „to my go osiągnęliśmy" | ✅ | `test_recovery.py` — dyspozycja i werdykt osobno |
+| Odzyskane `NOT_APPLIED` wymaga decyzji człowieka przed ponowieniem | ✅ | `test_recovery.py` — flaga wewnątrz `repeatable` |
+| Historia recovery dopisywalna, próby numerowane | ✅ | `test_recovery.py` |
 | PRODUCTION odmawia startu z atrapą dostawcy albo zdolnością testową | ✅ | `test_runner.py` — po tożsamościach, nie po liczbie |
 | Bramki zgody (płatność, publikacja, wiadomość, poświadczenia, trwałe usunięcie) | ✅ | `test_policy.py` |
 | Osobowość nie ma dostępu do `PolicyEngine` | ✅ | test strukturalny na sygnaturze |
@@ -56,7 +60,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | Lokalne API HTTP + WebSocket | ✅ | `test_api.py` |
 | CORS dla okna Tauri | ✅ | `test_api.py` — bez tego okno nie łączy się wcale |
 | **Narzędzia Windows** (rejestr, firewall, usługi, ekran, mysz, winget) | ❔ | deklarują platformę; nigdy nie wykonane na Windows |
-| Audio (mikrofon, głośniki, STT, TTS) | ❌ | nie istnieje — M13 |
+| Audio (mikrofon, głośniki, STT, TTS) | ❌ | nie istnieje — M13; recovery czeka na `audio.set` jako pierwszy prawdziwy przypadek |
 | Klient MCP | ❌ | nie istnieje — ani jednej linii |
 | Pluginy / rozszerzenia zewnętrzne | ❌ | nie istnieje; `paths.py:90` tworzy pusty katalog bez czytelnika |
 | Scheduler / zadania cykliczne | ❌ | nie istnieje — świadomie, patrz `nav.ts:11` |
@@ -68,8 +72,8 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 Ostatnie osiem wierszy jest tu po to, żeby brak był **widoczny w tej samej
 tabeli**, co reszta. Podsystem nieopisany nigdzie wygląda jak podsystem gotowy.
 
-Weryfikacja: `pytest` 553 zielonych (1 pominięty) · `ruff` czysto ·
-`mypy` czysto (80 plików).
+Weryfikacja: `pytest` 591 zielonych (1 pominięty) · `ruff` czysto ·
+`mypy` czysto (83 plików).
 
 **Przeładowanie i zdrowie dostawców sprawdzone też na żywo**, nie tylko testami:
 uruchomiony `garis serve`, prawdziwe gniazda, atrapa Gemini na `127.0.0.1`
@@ -138,7 +142,7 @@ wymagają maszyny z Windows 11.
 |---|---|---|
 | 1 | `git status`, commit | ✅ |
 | 2 | zależności | ✅ |
-| 3 | testy Python | ✅ 553 |
+| 3 | testy Python | ✅ 591 |
 | 4 | `ruff`, `mypy` | ✅ |
 | 5 | build frontendu | ✅ |
 | 6 | `cargo fmt --check` | ✅ |

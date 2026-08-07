@@ -24,8 +24,11 @@ kompilowała się w ogóle.
 - `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
 - `docs/KNOWN_ISSUES.md` — co blokuje i co już zamknięte.
 - `docs/PLANSTEP_STEP_TARGET_DESIGN.md` — kontrakt migracji `PlanStep` →
-  `StepTarget` — zamknięta. Kontrakt ustalony **przed** implementacją; przeczytaj przed dotknięciem
+  `StepTarget` — zamknięta. Kontrakt ustalony **przed** implementacją; przeczytaj
+  przed dotknięciem
   `agent/goal.py`, `agent/verify.py` albo `task_steps`.
+- `docs/RECOVERY.md` — co GARIS robi z efektem, za który nikt nie ręczy.
+  Dwie prawdy (sprawstwo i stan) i powód, dla którego nie wolno ich scalić.
 - `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
 
 ## Kto prowadzi
@@ -37,7 +40,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (553 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (591 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -52,9 +55,11 @@ core/src/garis/
   kernel/                                        słownik wspólny: Effect, Risk, Permission,
     contracts.py                                 Failure, Verification, dyspozycje efektu
     effects.py outbox.py                         księga efektów + transakcyjny outbox
+    recovery.py                                  werdykt recovery + dopisywalna historia
   runtime/                                       JEDYNA koperta wykonania
     runner.py                                    CapabilityRunner: 16 kroków, jedna kolejność
     legacy.py                                    wykonawca narzędzi — tylko handler
+    recovery.py                                  ustalanie skutku po awarii — ogląda, nie powtarza
     resolve.py                                   co to za cel; odpowiada, nie wykonuje
     policy.py approvals.py audit.py leases.py    bramki, dokładnie raz każda
   capabilities/                                  zdolności z weryfikatorem i dowodami
@@ -81,7 +86,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 553 passed
+.venv/bin/python -m pytest -q                 # 591 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -160,6 +165,12 @@ Nie są kwestią gustu. Każda ma test, który przewróci się przy naruszeniu.
     rozjadą. Resolver **nie wykonuje** i nie jest wystawionym krokiem runnera:
     gdyby był, kolejność szesnastu kroków stałaby się kontraktem publicznym.
     Szczegóły: `docs/PLANSTEP_STEP_TARGET_DESIGN.md`.
+6d. **„Cel jest osiągnięty" to nie „to my go osiągnęliśmy".** Odczyt po awarii
+    może dowieść, że głośność wynosi 30, i nie dowodzi, że ustawił ją GARIS —
+    człowiek mógł sięgnąć po pokrętło. `disposition` odpowiada o sprawstwo,
+    `verification` o stan, i `APPLIED` wymaga śladu związanego z samą operacją.
+    Recovery **ogląda**; niepewnego efektu nie wolno wykonać ponownie w ramach
+    ustalania, co się stało. Szczegóły: `docs/RECOVERY.md`.
 7. **Cisza jest domyślna.** `ctx.progress()` do dziennika; `ctx.note()` tylko gdy
    człowiek naprawdę powinien to usłyszeć.
 8. **Raport buduje się z faktów** (`agent/report.py`), nie z modelu. Model nie
@@ -392,7 +403,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 553 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 591 testów, musi być zielone
 cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
