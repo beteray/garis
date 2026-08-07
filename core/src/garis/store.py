@@ -266,6 +266,45 @@ SCHEMA: list[tuple[int, str]] = [
         ALTER TABLE task_steps ADD COLUMN capability TEXT NOT NULL DEFAULT '';
         """,
     ),
+    (
+        6,
+        """
+        -- A NOT_APPLIED reached by inspecting an uncertain effect is honest but
+        -- second-hand. `EffectRecord.repeatable` consults this, so a row that
+        -- carries it is not re-claimed by `reserve_in` — which is the only
+        -- protection that actually holds, since re-claiming is automatic.
+        ALTER TABLE effects ADD COLUMN retry_requires_confirmation INTEGER NOT NULL
+            DEFAULT 0;
+
+        -- Recovery attempts, append-only. One uncertain effect may be inspected
+        -- many times — the machine may be asleep, the file locked, the service
+        -- not up yet — and each attempt is a fact about a moment. Overwriting
+        -- the previous one would erase the reason the next was needed.
+        CREATE TABLE IF NOT EXISTS effect_recoveries (
+            recovery_id         TEXT PRIMARY KEY,
+            effect_id           TEXT NOT NULL,
+            attempt_number      INTEGER NOT NULL,
+            -- Canonical target as the resolver returned it, never the alias a
+            -- caller typed: two spellings of one inspector must not read back
+            -- as two different recoveries.
+            inspector           TEXT NOT NULL DEFAULT '',
+            inspector_effect_id TEXT NOT NULL DEFAULT '',
+            status              TEXT NOT NULL,
+            disposition         TEXT NOT NULL,
+            verification        TEXT,
+            -- Identifiers only. Evidence bodies stay in the effect row, where
+            -- reading them is a deliberate act rather than a side effect of
+            -- subscribing to events.
+            evidence_ids        TEXT NOT NULL DEFAULT '[]',
+            reason              TEXT NOT NULL DEFAULT '',
+            created_at          REAL NOT NULL,
+            UNIQUE (effect_id, attempt_number)
+        );
+
+        CREATE INDEX IF NOT EXISTS effect_recoveries_effect_idx
+            ON effect_recoveries(effect_id, attempt_number);
+        """,
+    ),
 ]
 
 VAULT_SCHEMA: list[tuple[int, str]] = [

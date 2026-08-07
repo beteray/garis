@@ -43,6 +43,7 @@ from typing import Any
 # all three and cannot import this package. Re-exported so `from
 # garis.capabilities import Risk` keeps working.
 from ..kernel.contracts import Effect, EffectDisposition, Permission, Risk
+from ..kernel.recovery import EffectReconciler
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,11 @@ class Capability:
     #: A stand-in, registered by tests. PRODUCTION refuses to start with one of
     #: these present — by identity, not by counting classes.
     fixture: bool = False
+    #: How this capability checks up on itself after a crash left its effect
+    #: uncertain. Optional: without one, recovery says so (`MANUAL_REQUIRED`)
+    #: rather than guessing. A reconciler chooses a read-only inspection and
+    #: reads what came back; it never executes anything itself.
+    reconciler: EffectReconciler | None = None
 
     def supported_here(self) -> bool:
         return sys.platform in self.platforms

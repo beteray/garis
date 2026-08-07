@@ -70,17 +70,30 @@ class EffectRecord:
     #: The verifier's whole verdict, stored so a replay hands back what was
     #: measured rather than what the state implies.
     verification: Mapping[str, Any] | None = None
+    #: Set when `NOT_APPLIED` was reached by *recovering* an uncertain effect
+    #: rather than observed as it happened. Such a row is honest but second-hand,
+    #: and the operation behind it is exactly the kind nobody wants run twice by
+    #: accident.
+    retry_requires_confirmation: bool = False
 
     @property
     def repeatable(self) -> bool:
-        """May the external effect be attempted again?
+        """May the external effect be attempted again, without asking anyone?
 
         Asked of the disposition, not of the state. "It failed" is not "nothing
         happened": an executor that changed something and then failed on the
         readback has failed *and* applied, and running it again is how one
         message becomes two. Only a failure that never reached the executor, or
         one that proved it changed nothing, may be repeated.
+
+        `retry_requires_confirmation` belongs in this property rather than
+        beside it. `reserve_in` below re-claims any row this returns True for —
+        so a flag a caller had to remember to consult would protect nothing at
+        all, and the operation it failed to protect would be one that had
+        already been uncertain once.
         """
+        if self.retry_requires_confirmation:
+            return False
         return self.state is EffectState.FAILED and self.disposition.permits_retry
 
 
@@ -266,6 +279,7 @@ class EffectStore:
         uncertain: bool = False,
         disposition: EffectDisposition = EffectDisposition.UNKNOWN,
         verification: Mapping[str, Any] | None = None,
+        retry_requires_confirmation: bool | None = None,
     ) -> EffectState:
         """Settle inside a caller's transaction.
 
@@ -286,7 +300,8 @@ class EffectStore:
             else EffectState.FAILED
         )
         self._write(conn, effect_id, state, outcome=outcome, evidence=evidence,
-                    reason=reason, disposition=disposition, verification=verification)
+                    reason=reason, disposition=disposition, verification=verification,
+                    retry_requires_confirmation=retry_requires_confirmation)
         return state
 
     def _settle(
@@ -314,10 +329,16 @@ class EffectStore:
         reason: str = "",
         disposition: EffectDisposition = EffectDisposition.UNKNOWN,
         verification: Mapping[str, Any] | None = None,
+        retry_requires_confirmation: bool | None = None,
     ) -> None:
         conn.execute(
             "UPDATE effects SET state = ?, outcome = ?, evidence = ?, reason = ?,"
-            " settled_at = ?, disposition = ?, verification = ? WHERE effect_id = ?",
+            " settled_at = ?, disposition = ?, verification = ?,"
+            # COALESCE, so `None` means "leave it as it was": only recovery
+            # raises this gate, and an ordinary settlement must not be able to
+            # lower one it never raised.
+            " retry_requires_confirmation ="
+            " COALESCE(?, retry_requires_confirmation) WHERE effect_id = ?",
             (
                 state.value,
                 json.dumps(outcome, ensure_ascii=False, default=repr)
@@ -329,6 +350,8 @@ class EffectStore:
                 disposition.value,
                 json.dumps(verification, ensure_ascii=False, default=repr)
                 if verification is not None else None,
+                None if retry_requires_confirmation is None
+                else int(retry_requires_confirmation),
                 effect_id,
             ),
         )
@@ -411,6 +434,10 @@ def _record(row: Any) -> EffectRecord:
         verification=(
             json.loads(row["verification"])
             if "verification" in keys and row["verification"] else None
+        ),
+        retry_requires_confirmation=bool(
+            row["retry_requires_confirmation"]
+            if "retry_requires_confirmation" in keys else 0
         ),
     )
 

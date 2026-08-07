@@ -31,6 +31,15 @@ from .contracts import (
     target_from_dict,
     target_to_dict,
 )
+from .recovery import (
+    EffectReconciler,
+    Observation,
+    RecoveryAssessment,
+    RecoveryInspection,
+    RecoveryRecord,
+    RecoveryStatus,
+    RecoveryStore,
+)
 
 __all__ = [
     "EFFECTFUL",
@@ -39,13 +48,20 @@ __all__ = [
     "CapabilityTarget",
     "Effect",
     "EffectDisposition",
+    "EffectReconciler",
     "EvidenceRecord",
     "ExecutionContext",
     "Failure",
+    "Observation",
     "Permission",
     "PolicyEstimate",
     "PolicySubject",
     "ProgressEvent",
+    "RecoveryAssessment",
+    "RecoveryInspection",
+    "RecoveryRecord",
+    "RecoveryStatus",
+    "RecoveryStore",
     "Risk",
     "RuntimeEvent",
     "RuntimeProfile",

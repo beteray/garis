@@ -143,6 +143,14 @@ class Topic:
     ACTION_FAILED = "action.failed"
     ACTION_DENIED = "action.denied"
 
+    # Recovery of an effect nobody could vouch for. Codes and flags only — a
+    # payload carrying the inspection's output would put a file's contents or a
+    # token on the bus for every consumer.
+    EFFECT_RECOVERY_STARTED = "effect.recovery.started"
+    EFFECT_RECOVERY_RESOLVED = "effect.recovery.resolved"
+    EFFECT_RECOVERY_STILL_UNKNOWN = "effect.recovery.still_unknown"
+    EFFECT_RECOVERY_MANUAL_REQUIRED = "effect.recovery.manual_required"
+
     APPROVAL_REQUESTED = "approval.requested"
     APPROVAL_RESOLVED = "approval.resolved"
 
