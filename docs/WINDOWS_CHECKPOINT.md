@@ -195,6 +195,40 @@ się skompilowało.**
 
 ---
 
+## E1 — pierwszy prawdziwy odczyt Windows (`windows.audio.master.get`)
+
+To jest **brakujący dowód E1**, nie osobny etap. Kod jest napisany i
+przetestowany, ale środowisko, w którym powstał, to Linux — Core Audio nigdy
+nie zostało wywołane.
+
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -e ".[dev,windows]"
+.venv\Scripts\python -m pytest -q
+
+# Ścieżka produkcyjna, nie adapter: odruch buduje plan ze zdolnością,
+# a plan idzie przez CapabilityRunner.
+.venv\Scripts\garis do "jaka jest głośność"
+.venv\Scripts\garis do "czy komputer jest wyciszony"
+```
+
+Oczekiwane: jedno zdanie z **prawdziwą** wartością, np. `Głośność: 42%.`,
+i `verified: true` w raporcie.
+
+- [ ] `pycaw` i `comtypes` instalują się z extrasu `windows`
+- [ ] Odczyt zwraca `endpoint_id`, `endpoint_name`, `volume_scalar`,
+      `volume_percent`, `muted`
+- [ ] Procent zgadza się z suwakiem głośności w systemie
+- [ ] `garis effects list` pokazuje odczyt z `verified: true`
+- [ ] Wyciszenie z paska systemowego → ponowny odczyt pokazuje `muted: true`
+- [ ] Odłączenie wszystkich urządzeń odtwarzania → **komunikat o braku
+      urządzenia**, nie `0%`
+- [ ] Głośność systemu **nie zmieniła się** w trakcie żadnego z powyższych
+
+Ostatni punkt jest warunkiem, nie uprzejmością: E1 jest tylko do odczytu.
+
+---
+
 ## Po zaliczeniu
 
 Zaktualizuj `docs/CURRENT_STATE.md`: przenieś, co zweryfikowane, z 🔨 na ✅ —

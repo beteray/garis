@@ -39,8 +39,12 @@ def percent_of(scalar: float) -> int:
     Two implementations of this would eventually disagree on a boundary, and the
     disagreement would surface as a capability that cannot verify its own
     output.
+
+    Half-up rather than `round()`, which is banker's: it would turn 42.5 into 42
+    and 43.5 into 44. Both are defensible for statistics and neither is
+    explainable to someone looking at a volume slider.
     """
-    return round(scalar * 100)
+    return math.floor(scalar * 100 + 0.5)
 
 
 @dataclass(frozen=True, slots=True)

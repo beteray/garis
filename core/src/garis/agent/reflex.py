@@ -27,11 +27,12 @@ Anything that changes the machine needs a plan, and a plan needs a model.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..kernel.contracts import StepTarget, ToolTarget
+from ..kernel.contracts import CapabilityTarget, StepTarget, ToolTarget
 from ..text import fold
 from .goal import Goal, Plan, PlanStep
 
@@ -354,6 +355,45 @@ _NOISE = frozenset({"jest", "sa", "teraz", "jeszcze", "czy", "is", "the", "u",
 _IS_IT = frozenset({"czy", "is"})
 _NOW = frozenset({"teraz", "jest", "obecnie", "now", "current", "aktualnie"})
 
+_VOLUME = frozenset({"glosnosc", "glosnosci", "glosno", "volume", "dzwiek", "dzwieku",
+                     "wyciszony", "wyciszenie", "wyciszone", "muted", "mute"})
+#: "jaka jest głośność" / "ile mam głośności" / "czy komputer jest wyciszony" all
+#: carry one of these; "podgłośnij" carries none, and must reach the planner.
+_ASKING = frozenset({"jaka", "jaki", "jakie", "ile", "czy", "jest", "mam", "teraz",
+                     "sprawdz", "pokaz", "obecnie"})
+
+
+def _validate_volume(value: Any) -> str:
+    """The same arithmetic the capability's verifier applies, asked again here.
+
+    A reflex plan earns "sprawdzone" without a model, so it re-derives the
+    percentage rather than trusting the one it was handed.
+    """
+    if not isinstance(value, dict):
+        return "narzedzie nie zwrocilo danych o glosnosci"
+    scalar = value.get("volume_scalar")
+    percent = value.get("volume_percent")
+    if isinstance(scalar, bool) or not isinstance(scalar, (int, float)):
+        return "brak zmierzonego poziomu glosnosci"
+    if not math.isfinite(float(scalar)) or not 0.0 <= float(scalar) <= 1.0:
+        return "zmierzony poziom glosnosci jest poza zakresem"
+    if isinstance(percent, bool) or not isinstance(percent, int):
+        return "brak poziomu glosnosci w procentach"
+    if percent != math.floor(float(scalar) * 100 + 0.5):
+        return "procent nie wynika ze zmierzonego poziomu"
+    if not isinstance(value.get("muted"), bool):
+        return "brak informacji o wyciszeniu"
+    if not str(value.get("endpoint_id") or "").strip():
+        return "odczyt nie mowi, ktorego urzadzenia dotyczy"
+    return ""
+
+
+def _present_volume(value: Any) -> str:
+    percent = value["volume_percent"]
+    if value["muted"]:
+        return f"Głośność jest ustawiona na {percent}%, ale dźwięk jest wyciszony."
+    return f"Głośność: {percent}%."
+
 REFLEXES: tuple[Reflex, ...] = (
     Reflex(
         name="disk-space",
@@ -397,6 +437,16 @@ REFLEXES: tuple[Reflex, ...] = (
         needs=(_SYSTEM, _WHAT),
         validate=_validate_system,
         present=_present_system,
+    ),
+    Reflex(
+        # The first reflex that answers with a capability rather than a tool.
+        # Keying the table on `StepTarget` is what makes that a one-line change.
+        name="audio-volume",
+        target=CapabilityTarget("windows.audio.master.get"),
+        purpose="Odczyt głośności i wyciszenia",
+        needs=(_VOLUME, _ASKING),
+        validate=_validate_volume,
+        present=_present_volume,
     ),
     Reflex(
         name="clock",

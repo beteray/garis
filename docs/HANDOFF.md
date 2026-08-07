@@ -23,10 +23,9 @@ kompilowała się w ogóle.
 - `docs/IA_AND_DESIGN.md` — mapa ekranów, materiały szkła, responsywność, dostępność, budżety.
 - `docs/CURRENT_STATE.md` — co sprawdzone, co tylko skompilowane, co nietknięte.
 - `docs/KNOWN_ISSUES.md` — co blokuje i co już zamknięte.
-- `docs/PLANSTEP_STEP_TARGET_DESIGN.md` — kontrakt migracji `PlanStep` →
-  `StepTarget` — zamknięta. Kontrakt ustalony **przed** implementacją; przeczytaj
-  przed dotknięciem
-  `agent/goal.py`, `agent/verify.py` albo `task_steps`.
+- `docs/PLANSTEP_STEP_TARGET_DESIGN.md` — zamknięty kontrakt migracji
+  `PlanStep` → `StepTarget`, ustalony **przed** implementacją. Przeczytaj przed
+  dotknięciem `agent/goal.py`, `agent/verify.py` albo `task_steps`.
 - `docs/RECOVERY.md` — co GARIS robi z efektem, za który nikt nie ręczy.
   Dwie prawdy (sprawstwo i stan) i powód, dla którego nie wolno ich scalić.
 - `docs/WINDOWS_CHECKPOINT.md` — komendy i test ręczny do wykonania na Windows 11.
@@ -40,7 +39,7 @@ architektura, którą utrzymujemy dalej.
 
 ## Stan: co działa
 
-Silnik jest kompletny i przetestowany (591 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
+Silnik jest kompletny i przetestowany (633 testów backendu + 16 testów interfejsu). Lokalne API działa. Interfejs
 jest napisany i kompiluje się; powłoka natywna czeka na maszynę z Windows.
 
 **0.1.2** dokłada dwie rzeczy: rozmowa przestała stawać się zadaniem
@@ -64,6 +63,7 @@ core/src/garis/
     policy.py approvals.py audit.py leases.py    bramki, dokładnie raz każda
   capabilities/                                  zdolności z weryfikatorem i dowodami
     native.py                                    wykonawca zdolności — tylko executor
+    audio.py                                     odczyt głośności — pierwszy prawdziwy Windows
   profiles.py                                    PRODUCTION / DEVELOPMENT / TEST / FIXTURE
   models/ + models/providers/                    router + 5 dostawców
     health.py                                    7 statusów dostawcy, mierzonych
@@ -86,7 +86,7 @@ Uruchomienie:
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest -q                 # 591 passed
+.venv/bin/python -m pytest -q                 # 633 passed
 .venv/bin/garis doctor
 .venv/bin/garis do "sprawdź, ile miejsca zostało na dysku"
 
@@ -403,7 +403,7 @@ framer-motion, wszystko animowane, `prefers-reduced-motion` respektowane.
 ## Praca
 
 ```bash
-.venv/bin/python -m pytest -q            # 591 testów, musi być zielone
+.venv/bin/python -m pytest -q            # 633 testów, musi być zielone
 cd apps/desktop && npm test              # 16 testów okna
 .venv/bin/ruff check .
 .venv/bin/python -m mypy
