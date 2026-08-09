@@ -63,6 +63,7 @@ core/src/garis/
     policy.py approvals.py audit.py leases.py    bramki, dokładnie raz każda
   capabilities/                                  zdolności z weryfikatorem i dowodami
     native.py                                    wykonawca zdolności — tylko executor
+    apps.py                                      uruchamianie programów — sprawdzane listą procesów
     audio.py                                     głośniki: odczyt, zapis, wyciszenie + recovery
   profiles.py                                    PRODUCTION / DEVELOPMENT / TEST / FIXTURE
   models/ + models/providers/                    router + 5 dostawców

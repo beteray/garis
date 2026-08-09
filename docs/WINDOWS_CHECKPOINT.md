@@ -294,6 +294,40 @@ a nie że to GARIS ją ustawił — suwak mógł ruszyć człowiek.
 
 ---
 
+## E3 — uruchamianie programów (`windows.app.launch`)
+
+Ten etap **startuje aplikacje**. Zamknij, co masz otwarte z rzeczy testowanych
+poniżej, żeby „już działał" nie zamaskował braku uruchomienia.
+
+Sedno: `CreateProcess` zwracające pid nie znaczy, że Discord jest na ekranie.
+Zdolność czyta listę procesów po starcie i to ten odczyt jest dowodem.
+
+```powershell
+.venv\Scripts\garis do "otwórz notatnik"
+.venv\Scripts\garis do "uruchom Discorda"
+```
+
+- [ ] Odpowiedź to zdanie o **odczycie** (`Notatnik działa.`), nie o wywołaniu
+- [ ] `verified: true`, a `garis effects list` pokazuje `disposition: applied`
+- [ ] Powtórzenie tego samego polecenia mówi `już działał` i **nie otwiera
+      drugiego okna**; efekt ma `disposition: not_applied`
+- [ ] `garis do "uruchom program-ktorego-nie-ma"` kończy się porażką z
+      `disposition: not_applied` (czyli wolno spróbować ponownie)
+- [ ] Program, który startuje przez stub i oddaje sterowanie istniejącej
+      instancji (Discord, Steam, przeglądarka), jest **rozpoznany jako
+      działający** — to jest właśnie przypadek, w którym pilnowanie pid-u kłamie
+
+### Recovery
+
+Zleć uruchomienie czegoś ciężkiego i ubij silnik w trakcie. Po restarcie:
+
+- [ ] GARIS **czyta listę procesów**, nie uruchamia programu drugi raz
+- [ ] status `resolved_goal_only`, `disposition: unknown`
+- [ ] gdy program działa, raport mówi, że działa — i **nie twierdzi**, że to
+      GARIS go uruchomił
+
+---
+
 ## Po zaliczeniu
 
 Zaktualizuj `docs/CURRENT_STATE.md`: przenieś, co zweryfikowane, z 🔨 na ✅ —

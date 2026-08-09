@@ -30,7 +30,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 675 testów |
+| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 700 testów |
 | **Jedna koperta wykonania** — narzędzie i zdolność wchodzą w to samo `CapabilityRunner.run` | ✅ | `test_runner.py` — test strukturalny czyta źródło `Runtime.perform` |
 | Jedna decyzja polityki, jeden wpis audytu, jeden efekt na wywołanie | ✅ | `test_runner.py` — liczniki na prawdziwym `PolicyEngine` |
 | Odmowa polityki i odmowa użytkownika nie zostawiają śladu w świecie | ✅ | `test_effect_safety.py` |
@@ -67,6 +67,9 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | Cel operacji zapisany przy rezerwacji, więc awaria go nie zabiera | ✅ | `test_effects.py`, `test_runner.py` |
 | Recovery po zapisie audio: mierzy stan, nie przypisuje sobie sprawstwa | ✅ | `test_audio.py` — `resolved_goal_only`, dyspozycja `unknown` |
 | Krok, który sam sprawdził swój wynik, rozstrzyga zadanie bez modelu | ✅ | `test_truthfulness.py` |
+| **Uruchamianie programów** `windows.app.launch` — „działa" znaczy „widziałem na liście procesów" | ✅ | `test_apps.py` — atrapa startera potrafi zwrócić pid i nie uruchomić nic |
+| Program, który już działa, nie jest uruchamiany drugi raz | ✅ | `test_apps.py` — dyspozycja `not_applied`, zero uruchomień |
+| Wznowione zadanie odtwarza uruchomienie zamiast go powtarzać | ✅ | `test_apps.py` — jeden efekt, jedno okno |
 | Konwersja skalar→procent, weryfikator, odruch „jaka jest głośność" | ✅ | `test_audio.py` — arytmetyka i koperta, bez Windows |
 | Audio (mikrofon, STT, TTS) | ❌ | nie istnieje — M13. Głośniki są zrobione (odczyt, zapis, wyciszenie); mikrofon i mowa nie |
 | Klient MCP | ❌ | nie istnieje — ani jednej linii |
@@ -80,8 +83,8 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 Ostatnie osiem wierszy jest tu po to, żeby brak był **widoczny w tej samej
 tabeli**, co reszta. Podsystem nieopisany nigdzie wygląda jak podsystem gotowy.
 
-Weryfikacja: `pytest` 675 zielonych (1 pominięty) · `ruff` czysto ·
-`mypy` czysto (84 plików).
+Weryfikacja: `pytest` 700 zielonych (1 pominięty) · `ruff` czysto ·
+`mypy` czysto (85 plików).
 
 **Przeładowanie i zdrowie dostawców sprawdzone też na żywo**, nie tylko testami:
 uruchomiony `garis serve`, prawdziwe gniazda, atrapa Gemini na `127.0.0.1`
@@ -150,7 +153,7 @@ wymagają maszyny z Windows 11.
 |---|---|---|
 | 1 | `git status`, commit | ✅ |
 | 2 | zależności | ✅ |
-| 3 | testy Python | ✅ 675 |
+| 3 | testy Python | ✅ 700 |
 | 4 | `ruff`, `mypy` | ✅ |
 | 5 | build frontendu | ✅ |
 | 6 | `cargo fmt --check` | ✅ |

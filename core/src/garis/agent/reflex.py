@@ -412,6 +412,29 @@ def _present_volume_change(value: Any) -> str:
 def _present_mute_change(value: Any) -> str:
     return "Dźwięk jest wyciszony." if value["muted"] else "Dźwięk nie jest już wyciszony."
 
+
+def _validate_launch(value: Any) -> str:
+    """A launch is usable when a process table was actually read."""
+    if not isinstance(value, dict):
+        return "narzedzie nie zwrocilo danych o uruchomieniu"
+    scanned = value.get("scanned")
+    if isinstance(scanned, bool) or not isinstance(scanned, int) or scanned <= 0:
+        return "lista procesow nie zostala odczytana"
+    if not isinstance(value.get("running"), bool):
+        return "brak informacji, czy program dziala"
+    if not str(value.get("target") or "").strip():
+        return "nie wiadomo, czego dotyczy uruchomienie"
+    return ""
+
+
+def _present_launch(value: Any) -> str:
+    target = value["target"]
+    if not value["running"]:
+        return f"Uruchomiłem {target}, ale nie widzę go na liście procesów."
+    if value.get("already_running"):
+        return f"{target} już działał."
+    return f"{target} działa."
+
 REFLEXES: tuple[Reflex, ...] = (
     Reflex(
         name="disk-space",
@@ -501,6 +524,9 @@ PRESENTERS: dict[StepTarget, Presenter] = {
     ),
     CapabilityTarget("windows.audio.master.mute"): Presenter(
         _validate_volume, _present_mute_change
+    ),
+    CapabilityTarget("windows.app.launch"): Presenter(
+        _validate_launch, _present_launch
     ),
 }
 

@@ -7,7 +7,10 @@ may call a capability by id whether or not it is on the menu.
 
 from __future__ import annotations
 
+# Importing a module registers what it declares. Order does not matter here:
+# `apps` names the process capability it inspects with by importing it directly.
 from . import (
+    apps,  # noqa: F401 - imported for its registrations
     audio,  # noqa: F401 - imported for its registrations
     processes,  # noqa: F401 - imported for its registrations
 )
