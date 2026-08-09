@@ -305,6 +305,26 @@ SCHEMA: list[tuple[int, str]] = [
             ON effect_recoveries(effect_id, attempt_number);
         """,
     ),
+    (
+        7,
+        """
+        -- What the operation was trying to achieve, written down when the effect
+        -- is reserved — before it happens, which is the only moment guaranteed
+        -- to arrive.
+        --
+        -- `arguments_hash` deliberately cannot answer this: it proves two calls
+        -- are the same act and says nothing about what either wanted. After a
+        -- crash a reconciler has the effect row and nothing else, and "the
+        -- volume is 30%" only settles anything once someone knows 30% was the
+        -- point. Without this column every reconciler would have to be handed
+        -- the original request by whoever resumed the task — which is exactly
+        -- the information a crash destroys.
+        --
+        -- Written by the capability, not by the caller, and redacted on the way
+        -- in: it is a goal, not an argument dump.
+        ALTER TABLE effects ADD COLUMN goal TEXT;
+        """,
+    ),
 ]
 
 VAULT_SCHEMA: list[tuple[int, str]] = [

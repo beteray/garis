@@ -34,7 +34,13 @@ from typing import Any
 
 from ..errors import StoreError
 from ..store import Database
-from .contracts import CapabilityError, EffectDisposition, EvidenceRecord, Failure
+from .contracts import (
+    CapabilityError,
+    EffectDisposition,
+    EvidenceRecord,
+    Failure,
+    redact,
+)
 
 
 class EffectState(StrEnum):
@@ -56,6 +62,11 @@ class EffectRecord:
     task_id: str = ""
     step_key: str = ""
     arguments_hash: str = ""
+    #: What the operation was trying to achieve, as the capability itself put
+    #: it, recorded at reservation. `arguments_hash` proves two calls are the
+    #: same act; only this says what either wanted, and after a crash it is all
+    #: a reconciler has to compare the world against.
+    goal: Mapping[str, Any] | None = None
     outcome: Mapping[str, Any] | None = None
     evidence: tuple[Mapping[str, Any], ...] = ()
     reason: str = ""
@@ -139,6 +150,7 @@ class EffectStore:
         task_id: str = "",
         step_key: str = "",
         args: Mapping[str, Any] | None = None,
+        goal: Mapping[str, Any] | None = None,
     ) -> EffectReservation:
         """Claim the right to perform this effect, or find out who already did.
 
@@ -149,7 +161,7 @@ class EffectStore:
         with self.db.transaction() as conn:
             return self.reserve_in(
                 conn, effect_id, capability_id=capability_id, task_id=task_id,
-                step_key=step_key, args=args,
+                step_key=step_key, args=args, goal=goal,
             )
 
     def reserve_in(
@@ -161,10 +173,17 @@ class EffectStore:
         task_id: str = "",
         step_key: str = "",
         args: Mapping[str, Any] | None = None,
+        goal: Mapping[str, Any] | None = None,
     ) -> EffectReservation:
         """Claim inside a caller's transaction, so the reservation and the event
-        announcing it either both land or neither does."""
+        announcing it either both land or neither does.
+
+        The goal is written now, with the reservation, rather than on settlement.
+        A goal that only appears once the work finished would be missing from
+        exactly the rows that need it: the ones a crash left behind.
+        """
         fingerprint = arguments_hash(args or {})
+        wanted = redact(goal) if goal else None
         now = time.time()
 
         row = conn.execute(
@@ -191,13 +210,14 @@ class EffectStore:
             conn.execute(
                 "UPDATE effects SET state = ?, reserved_at = ?, settled_at = NULL,"
                 " outcome = NULL, reason = '', attempt_number = ?, attempts = ?,"
-                " verification = NULL WHERE effect_id = ?",
+                " verification = NULL, goal = COALESCE(?, goal) WHERE effect_id = ?",
                 (
                     EffectState.RESERVED.value, now, attempt,
                     json.dumps(
                         [*existing.attempts, _attempt_entry(existing)],
                         ensure_ascii=False, default=repr,
                     ),
+                    _json_or_none(wanted),
                     effect_id,
                 ),
             )
@@ -210,6 +230,7 @@ class EffectStore:
                     task_id=task_id,
                     step_key=step_key,
                     arguments_hash=fingerprint,
+                    goal=wanted if wanted is not None else existing.goal,
                     reserved_at=now,
                     attempt_number=attempt,
                     attempts=(*existing.attempts, _attempt_entry(existing)),
@@ -219,9 +240,9 @@ class EffectStore:
             try:
                 conn.execute(
                     "INSERT INTO effects(effect_id, task_id, step_key, capability_id,"
-                    " arguments_hash, state, reserved_at) VALUES (?,?,?,?,?,?,?)",
+                    " arguments_hash, state, reserved_at, goal) VALUES (?,?,?,?,?,?,?,?)",
                     (effect_id, task_id, step_key, capability_id, fingerprint,
-                     EffectState.RESERVED.value, now),
+                     EffectState.RESERVED.value, now, _json_or_none(wanted)),
                 )
             except Exception as exc:  # pragma: no cover - the race, rarely hit
                 raise StoreError(f"Nie udało się zarezerwować efektu: {exc}") from exc
@@ -235,6 +256,7 @@ class EffectStore:
                 task_id=task_id,
                 step_key=step_key,
                 arguments_hash=fingerprint,
+                goal=wanted,
                 reserved_at=now,
             ),
         )
@@ -391,6 +413,14 @@ class EffectStore:
         return stranded
 
 
+def _json_or_none(value: Mapping[str, Any] | None) -> str | None:
+    """`None` stays `None` all the way to SQLite, so `COALESCE` can tell the
+    difference between "no goal was offered" and "the goal is empty"."""
+    if value is None:
+        return None
+    return json.dumps(dict(value), ensure_ascii=False, default=repr)
+
+
 def _attempt_entry(record: EffectRecord) -> dict[str, Any]:
     """One line of history, written when an attempt is superseded by another."""
     return {
@@ -414,6 +444,9 @@ def _record(row: Any) -> EffectRecord:
         task_id=row["task_id"] or "",
         step_key=row["step_key"] or "",
         arguments_hash=row["arguments_hash"] or "",
+        goal=(
+            json.loads(row["goal"]) if "goal" in keys and row["goal"] else None
+        ),
         outcome=json.loads(row["outcome"]) if row["outcome"] else None,
         evidence=tuple(json.loads(row["evidence"] or "[]")),
         reason=row["reason"] or "",

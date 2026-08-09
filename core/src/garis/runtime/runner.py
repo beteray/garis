@@ -177,6 +177,19 @@ class TargetExecutor(Protocol):
     ) -> Verification:
         """Check the postcondition, independently of what the work reported."""
 
+    def goal(
+        self, resolved: Resolved, params: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        """What this call is trying to achieve, for the effect record.
+
+        Asked after validation and before anything is reserved, because the
+        reservation is the last moment guaranteed to happen. Saying nothing is a
+        legitimate answer and the default: a target that cannot express its goal
+        as data should not invent one, and recovery will report `MANUAL_REQUIRED`
+        rather than compare the world against a guess.
+        """
+        return {}
+
 
 # --------------------------------------------------------------------- result
 
@@ -408,7 +421,7 @@ class CapabilityRunner:
                 reservation = self.effects.reserve_in(
                     conn, effect_id, capability_id=target.name,
                     task_id=action.task_id or "", step_key=action.step_key or "",
-                    args=params,
+                    args=params, goal=_goal_of(executor, resolved, params),
                 )
                 if reservation.granted:
                     self.outbox.stage(
@@ -967,6 +980,23 @@ def derive_effect_id(name: str, action: Action, subject: PolicySubject) -> str:
         )
         return "eff-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:28]
     return "inv-" + uuid.uuid4().hex[:28]
+
+
+def _goal_of(
+    executor: TargetExecutor, resolved: Resolved, params: Mapping[str, Any]
+) -> Mapping[str, Any] | None:
+    """Ask the target what it wants, and never let the answer break the run.
+
+    A goal is bookkeeping for a recovery that may never be needed. An executor
+    that raises while describing its own intent must not stop the work from
+    happening — the effect is still reserved, and recovery will simply have
+    nothing to compare against, which is the state everything already handles.
+    """
+    try:
+        wanted = executor.goal(resolved, params)
+    except Exception:
+        return None
+    return dict(wanted) if wanted else None
 
 
 def decide_disposition(

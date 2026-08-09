@@ -274,6 +274,7 @@ def _mutator(capability_id: str, reconciler: Any) -> Capability:
         inputs=(Field("level", "int", "Docelowy poziom", required=False),),
         evidence=(Field("level", "int", "Poziom po zmianie"),),
         reconciler=reconciler,
+        goal_of=lambda args: {"level": args.get("level")},
         fixture=True,
     )
 
@@ -313,9 +314,13 @@ ALL: tuple[Capability, ...] = (
 
 
 def _wanted(effect: EffectRecord) -> Any:
-    outcome: Mapping[str, Any] = effect.outcome or {}
-    requested = outcome.get("requested") if isinstance(outcome, Mapping) else None
-    return requested if requested is not None else 30
+    """What the crashed call was after, read from the goal it recorded.
+
+    Not from `outcome`: a crash is precisely the case where no outcome was ever
+    written, and that is the only case this function is used in.
+    """
+    goal: Mapping[str, Any] = effect.goal or {}
+    return goal.get("level") if isinstance(goal, Mapping) else None
 
 
 def _seen(observation: Observation, key: str) -> Any:

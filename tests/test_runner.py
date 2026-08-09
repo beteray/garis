@@ -420,6 +420,95 @@ async def test_a_crash_in_a_reading_is_a_plain_failure(capability_runner, perfor
     assert record.repeatable
 
 
+# ------------------------------------------------------------------ the goal
+
+
+async def test_the_effect_records_what_the_capability_was_trying_to_achieve(
+    capability_runner, perform
+) -> None:
+    """Written at reservation, so a crash cannot take it with it."""
+    runs: list[str] = []
+    registry = catalogue(
+        capability_runner,
+        capability(
+            runs,
+            id="runner.goalful", risk=Risk.REVERSIBLE, effects=frozenset({Effect.WRITE}),
+            inputs=(Field("percent", "int", "Docelowy poziom"),),
+            goal_of=lambda args: {"volume_percent": args["percent"]},
+        ),
+    )
+
+    await perform(registry, "runner.goalful", {"percent": 30}, effect_id="g-1")
+
+    record = capability_runner.effects.load("g-1")
+    assert record is not None
+    assert record.goal == {"volume_percent": 30}
+
+
+async def test_the_goal_comes_from_the_capability_and_not_from_the_arguments(
+    capability_runner, perform
+) -> None:
+    """A capability declaring no goal stores none — the runner never invents one
+    out of the parameters it happens to have."""
+    runs: list[str] = []
+    registry = catalogue(
+        capability_runner,
+        capability(runs, id="runner.goalless",
+                   inputs=(Field("percent", "int", "Poziom", required=False),)),
+    )
+
+    await perform(registry, "runner.goalless", {"percent": 30}, effect_id="g-2")
+
+    record = capability_runner.effects.load("g-2")
+    assert record is not None and record.goal is None
+
+
+async def test_a_capability_whose_goal_raises_still_does_its_work(
+    capability_runner, perform
+) -> None:
+    """Bookkeeping for a recovery that may never happen must not be able to stop
+    the work that would need recovering."""
+    runs: list[str] = []
+
+    def explodes(_: dict) -> dict:
+        raise RuntimeError("autor pomylił się w goal_of")
+
+    registry = catalogue(
+        capability_runner,
+        capability(runs, id="runner.goalboom", goal_of=explodes),
+    )
+
+    performed = await perform(registry, "runner.goalboom", effect_id="g-3")
+
+    assert performed.ok and runs == ["runner.goalboom"]
+    record = capability_runner.effects.load("g-3")
+    assert record is not None and record.goal is None
+
+
+async def test_an_argument_outside_its_declared_range_reserves_nothing(
+    capability_runner, perform
+) -> None:
+    """Refused during validation, which is before the effect exists: a planner
+    that asks for 250% must not reach the point where the world may move."""
+    runs: list[str] = []
+    registry = catalogue(
+        capability_runner,
+        capability(
+            runs,
+            id="runner.bounded", risk=Risk.REVERSIBLE, effects=frozenset({Effect.WRITE}),
+            inputs=(Field("percent", "int", "Poziom",
+                          check=lambda v: 0 <= v <= 100),),
+        ),
+    )
+
+    performed = await perform(registry, "runner.bounded", {"percent": 250},
+                              effect_id="g-4")
+
+    assert not performed.ok
+    assert runs == [], "wykonawca nie miał prawa zostać dotknięty"
+    assert capability_runner.effects.load("g-4") is None
+
+
 # --------------------------------------------------------------- truthfulness
 
 

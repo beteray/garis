@@ -72,11 +72,9 @@ def crashed(db, capability_id: str, *, effect_id: str = "eff-1", wanted: int = 3
     """The footprint of a process that died mid-action: reserved, never settled."""
     effects = EffectStore(db)
     effects.reserve(effect_id, capability_id=capability_id, task_id="t1",
-                    step_key="set", args={"level": wanted})
+                    step_key="set", args={"level": wanted},
+                    goal={"level": wanted})
     effects.sweep_unsettled()
-    with db.transaction() as conn:
-        conn.execute("UPDATE effects SET outcome = ? WHERE effect_id = ?",
-                     (json.dumps({"requested": wanted}), effect_id))
     return effects.load(effect_id)
 
 
@@ -549,11 +547,9 @@ def parked(store, db, capability_id: str, *, wanted: int = 30):
     store.set_state(task.id, TaskState.RUNNING)
     effects = EffectStore(db)
     effects.reserve("eff-1", capability_id=capability_id, task_id=task.id,
-                    step_key="set", args={"level": wanted})
+                    step_key="set", args={"level": wanted},
+                    goal={"level": wanted})
     effects.sweep_unsettled()
-    with db.transaction() as conn:
-        conn.execute("UPDATE effects SET outcome = ? WHERE effect_id = ?",
-                     (json.dumps({"requested": wanted}), "eff-1"))
     return task
 
 

@@ -113,6 +113,20 @@ class NativeCapabilityExecutor(TargetExecutor):
             disposition=outcome.disposition,
         )
 
+    def goal(
+        self, resolved: Resolved, params: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        """The capability's own statement of what this call wants.
+
+        Only the capability can write it: the runner sees validated arguments
+        and has no way to tell which of them is the target state and which is a
+        detail of how to reach it.
+        """
+        capability: Capability = resolved.handle
+        if capability.goal_of is None:
+            return {}
+        return capability.goal_of(dict(params))
+
     async def verify(
         self, resolved: Resolved, params: Mapping[str, Any], output: ExecutionOutput
     ) -> Verification:

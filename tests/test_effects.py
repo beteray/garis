@@ -137,6 +137,76 @@ def test_effects_are_listed_per_task(effects: EffectStore) -> None:
     assert [r.effect_id for r in effects.for_task("task")] == ["t-1", "t-2"]
 
 
+# ---------------------------------------------------------------------- goals
+
+
+def test_a_crashed_effect_still_says_what_it_was_trying_to_do(
+    effects: EffectStore,
+) -> None:
+    """The whole reason the goal is written at reservation and not at the end.
+
+    A crash settles nothing, so anything recorded on completion is missing from
+    exactly the rows recovery has to read.
+    """
+    effects.reserve("g-1", capability_id="windows.audio.master.set",
+                    args={"percent": 30}, goal={"volume_percent": 30})
+    effects.sweep_unsettled()
+
+    record = effects.load("g-1")
+    assert record is not None and record.state is EffectState.UNCERTAIN
+    assert record.goal == {"volume_percent": 30}
+
+
+def test_the_arguments_hash_still_cannot_answer_what_was_wanted(
+    effects: EffectStore,
+) -> None:
+    """Two facts, two fields. The hash proves sameness; the goal states intent."""
+    effects.reserve("g-2", capability_id="c", args={"percent": 30},
+                    goal={"volume_percent": 30})
+
+    record = effects.load("g-2")
+    assert record is not None
+    assert record.arguments_hash and record.arguments_hash != str(record.goal)
+
+
+def test_a_goal_is_redacted_like_anything_else_that_gets_stored(
+    effects: EffectStore,
+) -> None:
+    """It is written down and later shown, so it goes through the same filter as
+    every other stored field."""
+    effects.reserve("g-3", capability_id="c", args={},
+                    goal={"path": "raport.txt", "token": "sk-prawdziwy"})
+
+    record = effects.load("g-3")
+    assert record is not None and record.goal is not None
+    assert record.goal["path"] == "raport.txt"
+    assert record.goal["token"] == "[ukryte]"
+
+
+def test_a_capability_that_states_no_goal_stores_none(effects: EffectStore) -> None:
+    """Silence is a legitimate answer and must not become an empty promise."""
+    effects.reserve("g-4", capability_id="c", args={"a": 1})
+    assert (record := effects.load("g-4")) is not None and record.goal is None
+
+
+def test_a_retry_keeps_the_goal_of_the_attempt_that_failed(
+    effects: EffectStore,
+) -> None:
+    """A retry under the same effect id is the same intent, so the goal survives
+    even when the retrying caller does not restate it."""
+    effects.reserve("g-5", capability_id="c", args={"percent": 30},
+                    goal={"volume_percent": 30})
+    effects.complete("g-5", ok=False, reason="brak urządzenia",
+                     disposition=EffectDisposition.NOT_APPLIED)
+
+    again = effects.reserve("g-5", capability_id="c", args={"percent": 30})
+
+    assert again.granted
+    assert again.record is not None and again.record.goal == {"volume_percent": 30}
+    assert (stored := effects.load("g-5")) is not None
+    assert stored.goal == {"volume_percent": 30}
+
+
 # -------------------------------------------------------------------- outbox
 
 

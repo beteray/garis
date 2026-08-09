@@ -153,6 +153,15 @@ class Capability:
     #: rather than guessing. A reconciler chooses a read-only inspection and
     #: reads what came back; it never executes anything itself.
     reconciler: EffectReconciler | None = None
+    #: What a call is trying to achieve, derived from its validated arguments
+    #: and written into the effect record before the work starts. The reconciler
+    #: reads it back after a crash — it is the only thing that turns "the volume
+    #: is 30%" into "the volume is what it was supposed to be".
+    #:
+    #: Pure, and small on purpose. It is stored and later shown, so it holds the
+    #: target state and nothing else: not the whole argument dict, not a path,
+    #: not anything a `vault://` reference resolved to.
+    goal_of: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None
 
     def supported_here(self) -> bool:
         return sys.platform in self.platforms
@@ -167,8 +176,16 @@ class Capability:
                 if spec.required:
                     raise ValueError(f"{self.id}: brakuje parametru {spec.name!r}")
                 continue
-            value = args[spec.name]
-            out[spec.name] = _coerce(self.id, spec, value)
+            value = _coerce(self.id, spec, args[spec.name])
+            if spec.check is not None and not spec.check(value):
+                # Refused here rather than inside the executor, because "here"
+                # is before an effect is reserved. A planner that asks for 250%
+                # must not reach the point where the volume may already have
+                # moved.
+                raise ValueError(
+                    f"{self.id}: parametr {spec.name!r} ma niedozwoloną wartość: {value!r}"
+                )
+            out[spec.name] = value
         return out
 
     def missing_evidence(self, outcome: Outcome) -> tuple[str, ...]:
