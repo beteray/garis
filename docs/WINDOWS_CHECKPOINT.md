@@ -215,6 +215,15 @@ python -m venv .venv
 Oczekiwane: jedno zdanie z **prawdziwą** wartością, np. `Głośność: 42%.`,
 i `verified: true` w raporcie.
 
+`garis do` mówi zdanie. Żeby zobaczyć surowe liczby do porównania z suwakiem:
+
+```powershell
+.venv\Scripts\python.exe tools\e1_audio_check.py
+```
+
+Wypisuje `endpoint_id`, `endpoint_name`, `volume_scalar`, `volume_percent`,
+`muted`, `verified` i `error` — tą samą drogą produkcyjną, nie z adaptera.
+
 - [ ] `pycaw` i `comtypes` instalują się z extrasu `windows`
 - [ ] Odczyt zwraca `endpoint_id`, `endpoint_name`, `volume_scalar`,
       `volume_percent`, `muted`
