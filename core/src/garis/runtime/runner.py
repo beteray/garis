@@ -309,10 +309,19 @@ class CapabilityRunner:
         try:
             resolved = executor.resolve(target, action)
         except GarisError as exc:
-            kind = "unsupported" if type(exc).__name__ == "Unsupported" else "not_found"
+            # A typed failure says what went wrong; the name check is the
+            # fallback for the legacy exceptions that predate `Failure`. Reading
+            # the type name first is how "nie działa na tym systemie" came back
+            # labelled `invalid_input`.
             failure = (
-                Failure.UNSUPPORTED_PLATFORM if kind == "unsupported"
+                exc.failure if isinstance(exc, CapabilityError)
+                else Failure.UNSUPPORTED_PLATFORM
+                if type(exc).__name__ == "Unsupported"
                 else Failure.INVALID_INPUT
+            )
+            kind = (
+                "unsupported" if failure is Failure.UNSUPPORTED_PLATFORM
+                else "not_found"
             )
             return self._settle_gate(
                 target.name, source, action, None, failure, AUDIT_ERROR, str(exc),

@@ -23,12 +23,22 @@ from garis.capabilities.base import Invocation, Outcome
 from garis.capabilities.native import NativeCapabilityExecutor
 from garis.capabilities.registry import REGISTRY, CapabilityRegistry
 from garis.errors import ExecutionError, Unsupported
-from garis.kernel.contracts import CapabilityTarget, ExecutionContext, RuntimeProfile
+from garis.kernel.contracts import (
+    CapabilityTarget,
+    EffectDisposition,
+    ExecutionContext,
+    Failure,
+    RuntimeProfile,
+)
 from garis.kernel.effects import EffectStore
+from garis.kernel.outbox import EventOutbox
+from garis.kernel.recovery import RecoveryStatus
 from garis.runtime import TargetResolver, ToolRegistry
 from garis.runtime.action import Action
 
 CAPABILITY = "windows.audio.master.get"
+SET = "windows.audio.master.set"
+MUTE = "windows.audio.master.mute"
 
 
 def reading(scalar: float = 0.42, muted: bool = False, endpoint: str = "{ep-1}"):
@@ -361,6 +371,388 @@ async def test_a_reading_gets_a_fresh_effect_id_every_time(
     assert first.effect_id.startswith("inv-")
 
 
+# --------------------------------------------------------------- writing back
+
+
+@pytest.fixture
+def endpoint(monkeypatch):
+    """A fake endpoint that behaves like one: writes land, reads follow them.
+
+    The point of the whole stage is that GARIS believes the second read rather
+    than the first call, so the double has to be able to *disagree* with the
+    request — which `quantise` is for.
+    """
+    state: dict = {"scalar": 0.20, "muted": False, "quantise": None, "fail": None}
+
+    def backend(scalar, muted):
+        if state["fail"] is not None:
+            raise state["fail"]
+        before = audio.AudioReading("{ep-1}", "Głośniki (Realtek)",
+                                    state["scalar"], state["muted"])
+        if scalar is not None:
+            state["scalar"] = (
+                state["quantise"](scalar) if state["quantise"] else scalar
+            )
+        if muted is not None and not state.get("deaf"):
+            state["muted"] = bool(muted)
+        after = audio.AudioReading("{ep-1}", "Głośniki (Realtek)",
+                                   state["scalar"], state["muted"])
+        return audio.AudioChange(before=before, after=after)
+
+    monkeypatch.setattr(audio, "_WRITE_BACKEND", backend)
+    return state
+
+
+@pytest.fixture
+def writers(capability_runner) -> CapabilityRegistry:
+    """All three audio capabilities, admitted on this platform for the envelope."""
+    registry = CapabilityRegistry()
+    for name in (CAPABILITY, SET, MUTE):
+        registry.add(replace(REGISTRY.get(name),
+                             platforms=("win32", "linux", "darwin")))
+    capability_runner.register_executor("capability", NativeCapabilityExecutor(registry))
+    registry.bind(capability_runner)
+    return registry
+
+
+async def change(name: str, args: dict) -> Outcome:
+    executor = REGISTRY.get(name).executor
+    return await executor(Invocation(capability=name, args=args))
+
+
+async def verified(name: str, args: dict):
+    outcome = await change(name, args)
+    verdict = await REGISTRY.get(name).verifier(
+        Invocation(capability=name, args=args), outcome
+    )
+    return outcome, verdict
+
+
+async def test_setting_the_volume_is_judged_by_reading_it_back(endpoint) -> None:
+    outcome, verdict = await verified(SET, {"percent": 30})
+
+    assert outcome.ok and verdict.ok and verdict.checked
+    assert outcome.value["volume_percent"] == 30
+    assert outcome.value["requested_percent"] == 30
+    assert outcome.value["previous_percent"] == 20, 'stan "przed" pochodzi z pomiaru'
+    assert outcome.disposition is EffectDisposition.APPLIED
+
+
+async def test_an_endpoint_that_rounds_by_a_point_still_counts_as_done(
+    endpoint,
+) -> None:
+    """A driver quantises the master level. 29% and 31% are the hardware being
+    honest about 30%, not GARIS missing."""
+    endpoint["quantise"] = lambda wanted: 0.31
+
+    outcome, verdict = await verified(SET, {"percent": 30})
+
+    assert outcome.value["volume_percent"] == 31
+    assert verdict.ok and verdict.checked
+
+
+async def test_an_endpoint_that_lands_somewhere_else_is_a_checked_failure(
+    endpoint,
+) -> None:
+    """The write happened and missed. All three facts are held apart: it ran, it
+    applied, and the goal was not met."""
+    endpoint["quantise"] = lambda wanted: 0.45
+
+    outcome, verdict = await verified(SET, {"percent": 30})
+
+    assert outcome.ok, "wykonanie się udało — to nie jest to samo co cel"
+    assert outcome.disposition is EffectDisposition.APPLIED
+    assert not verdict.ok and verdict.checked
+    assert "45%" in verdict.note and "30%" in verdict.note
+
+
+async def test_a_write_that_never_reached_the_endpoint_may_be_tried_again(
+    endpoint,
+) -> None:
+    endpoint["fail"] = audio.WriteRefused(
+        "Windows nie wskazuje żadnego domyślnego urządzenia odtwarzania.",
+        disposition=EffectDisposition.NOT_APPLIED,
+    )
+
+    outcome, verdict = await verified(SET, {"percent": 30})
+
+    assert not outcome.ok and not outcome.uncertain
+    assert outcome.disposition is EffectDisposition.NOT_APPLIED
+    assert outcome.disposition.permits_retry
+    assert not verdict.ok and verdict.checked
+
+
+async def test_a_write_that_may_have_landed_is_never_repeated(endpoint) -> None:
+    """A COM call that raised may still have been delivered."""
+    endpoint["fail"] = audio.WriteRefused(
+        "Nie udało się zmienić ustawień dźwięku: COMError",
+        disposition=EffectDisposition.UNKNOWN, uncertain=True,
+    )
+
+    outcome, _ = await verified(SET, {"percent": 30})
+
+    assert outcome.uncertain
+    assert outcome.disposition is EffectDisposition.UNKNOWN
+    assert not outcome.disposition.permits_retry
+
+
+async def test_a_write_whose_readback_broke_is_applied_and_unverified(
+    endpoint,
+) -> None:
+    """The setter returned; only the check failed. Retrying would set a machine
+    that is already set, and claiming success would be a claim nobody made."""
+    endpoint["fail"] = audio.WriteRefused(
+        "Zmiana poszła do Windows, ale nie udało się sprawdzić wyniku: COMError",
+        disposition=EffectDisposition.APPLIED, uncertain=True,
+    )
+
+    outcome, verdict = await verified(SET, {"percent": 30})
+
+    assert outcome.disposition is EffectDisposition.APPLIED
+    assert outcome.uncertain and not verdict.ok
+    assert not outcome.disposition.permits_retry
+
+
+async def test_running_off_windows_changes_nothing_and_says_so(monkeypatch) -> None:
+    monkeypatch.setattr(audio, "_WRITE_BACKEND", audio._unsupported_write)
+
+    outcome, verdict = await verified(SET, {"percent": 30})
+
+    assert not outcome.ok and not outcome.uncertain
+    assert outcome.disposition is EffectDisposition.NOT_APPLIED
+    assert "Windows" in verdict.note
+
+
+async def test_a_readback_missing_its_request_cannot_be_verified(endpoint) -> None:
+    """Without the request there is nothing to compare against, and a check with
+    nothing to compare against is not a check."""
+    outcome = await change(SET, {"percent": 30})
+    stripped = Outcome(
+        ok=True,
+        value={k: v for k, v in outcome.value.items() if k != "requested_percent"},
+        evidence=outcome.evidence,
+    )
+
+    verdict = await audio.verify_master_set(Invocation(SET, {}), stripped)
+
+    assert not verdict.ok and verdict.checked
+    assert "requested_percent" in verdict.missing
+
+
+async def test_evidence_that_disagrees_with_the_request_is_refused(endpoint) -> None:
+    outcome = await change(SET, {"percent": 30})
+    tampered = Outcome(
+        ok=True, value=outcome.value,
+        evidence={**outcome.evidence, "requested_percent": 80},
+    )
+
+    verdict = await audio.verify_master_set(Invocation(SET, {}), tampered)
+
+    assert not verdict.ok and verdict.checked
+
+
+# ------------------------------------------------------------------- muting
+
+
+@pytest.mark.parametrize("wanted", [True, False])
+async def test_muting_is_judged_by_reading_the_flag_back(endpoint, wanted) -> None:
+    endpoint["muted"] = not wanted
+
+    outcome, verdict = await verified(MUTE, {"muted": wanted})
+
+    assert outcome.ok and verdict.ok and verdict.checked
+    assert outcome.value["muted"] is wanted
+    assert outcome.value["previous_muted"] is (not wanted)
+
+
+async def test_a_mute_that_did_not_take_is_a_checked_failure(endpoint) -> None:
+    """The endpoint accepted the call and stayed where it was."""
+    endpoint["deaf"] = True
+
+    outcome, verdict = await verified(MUTE, {"muted": True})
+
+    assert outcome.ok and outcome.disposition is EffectDisposition.APPLIED
+    assert not verdict.ok and verdict.checked
+
+
+async def test_muting_leaves_the_level_alone(endpoint) -> None:
+    """Wyciszenie to nie zerowa głośność."""
+    await change(MUTE, {"muted": True})
+
+    assert endpoint["scalar"] == 0.20
+
+
+# ----------------------------------------------------- the envelope, writing
+
+
+async def test_the_write_runs_through_the_one_envelope_and_records_its_goal(
+    capability_runner, writers, endpoint, db
+) -> None:
+    result = await capability_runner.run(
+        CapabilityTarget(SET),
+        Action(tool=SET, params={"percent": 30}, task_id="t1", step_key="set"),
+        ExecutionContext(task_id="t1", step_key="set",
+                         runtime_profile=RuntimeProfile.TEST),
+    )
+
+    assert result.ok and result.verified
+    record = EffectStore(db).load(result.effect_id)
+    assert record is not None
+    assert record.goal == {"volume_percent": 30}, "cel zapisany przed zmianą"
+    assert record.disposition is EffectDisposition.APPLIED
+
+
+async def test_the_same_write_resumed_after_a_crash_keeps_one_identity(
+    capability_runner, writers, endpoint
+) -> None:
+    """An effectful step gets a deterministic id, so a resumed task lands on its
+    own reservation instead of setting the volume a second time."""
+    async def once():
+        return await capability_runner.run(
+            CapabilityTarget(SET),
+            Action(tool=SET, params={"percent": 30}, task_id="t1", step_key="set"),
+            ExecutionContext(task_id="t1", step_key="set",
+                             runtime_profile=RuntimeProfile.TEST),
+        )
+
+    first, second = await once(), await once()
+
+    assert first.effect_id == second.effect_id
+    assert first.effect_id.startswith("eff-")
+    assert second.replayed, "sukces jest odtwarzany, nie powtarzany"
+
+
+async def test_asking_for_an_impossible_volume_never_touches_the_endpoint(
+    capability_runner, writers, endpoint
+) -> None:
+    reached: list[float] = []
+    original = audio._WRITE_BACKEND
+
+    def watched(scalar, muted):
+        reached.append(scalar)
+        return original(scalar, muted)
+
+    audio._WRITE_BACKEND = watched
+    try:
+        result = await capability_runner.run(
+            CapabilityTarget(SET),
+            Action(tool=SET, params={"percent": 250}, task_id="t1", step_key="set"),
+            ExecutionContext(task_id="t1", step_key="set",
+                             runtime_profile=RuntimeProfile.TEST),
+        )
+    finally:
+        audio._WRITE_BACKEND = original
+
+    assert not result.ok and result.failure is Failure.INVALID_INPUT
+    assert reached == [], "walidacja jest przed rezerwacją i przed zapisem"
+    assert result.disposition is EffectDisposition.NOT_STARTED
+
+
+# ------------------------------------------------------------------ recovery
+
+
+def crashed(db, capability_id: str, goal: dict, effect_id: str = "eff-audio"):
+    """The footprint of a process that died mid-write."""
+    effects = EffectStore(db)
+    effects.reserve(effect_id, capability_id=capability_id, task_id="t1",
+                    step_key="set", args={}, goal=goal)
+    effects.sweep_unsettled()
+    return effects.load(effect_id)
+
+
+@pytest.fixture
+def recovery(capability_runner, writers, db, bus):
+    from garis.kernel.recovery import RecoveryStore
+    from garis.runtime import AuditLog
+    from garis.runtime.recovery import EffectRecoveryService
+
+    return EffectRecoveryService(
+        effects=EffectStore(db),
+        recoveries=RecoveryStore(db),
+        runner=capability_runner,
+        resolver=TargetResolver(ToolRegistry(), writers),
+        capabilities=writers,
+        audit=AuditLog(db),
+        outbox=EventOutbox(db, bus),
+    )
+
+
+async def test_after_a_crash_the_volume_is_measured_and_never_set_again(
+    recovery, db, endpoint, speakers
+) -> None:
+    """The whole reason `audio.set` was the case recovery was built for."""
+    crashed(db, SET, {"volume_percent": 30})
+    speakers(reading(0.30))
+
+    wrote: list[float] = []
+    original = audio._WRITE_BACKEND
+    audio._WRITE_BACKEND = lambda s, m: wrote.append(s)  # type: ignore[assignment]
+    try:
+        outcome = await recovery.reconcile("eff-audio")
+    finally:
+        audio._WRITE_BACKEND = original
+
+    assert wrote == [], "recovery ogląda świat, nigdy nie powtarza operacji"
+    assert outcome.status is RecoveryStatus.RESOLVED_GOAL_ONLY
+    assert outcome.verification.goal_met and outcome.verification.checked
+
+
+async def test_a_matching_volume_is_never_proof_that_garis_set_it(
+    recovery, db, speakers
+) -> None:
+    """Someone can reach for the volume key while the engine is down."""
+    crashed(db, SET, {"volume_percent": 30})
+    speakers(reading(0.30))
+
+    outcome = await recovery.reconcile("eff-audio")
+
+    assert outcome.disposition is EffectDisposition.UNKNOWN
+    assert not outcome.disposition.permits_retry
+
+
+async def test_a_volume_that_is_not_what_was_wanted_is_reported_as_such(
+    recovery, db, speakers
+) -> None:
+    crashed(db, SET, {"volume_percent": 30})
+    speakers(reading(0.65))
+
+    outcome = await recovery.reconcile("eff-audio")
+
+    assert outcome.status is RecoveryStatus.RESOLVED_GOAL_ONLY
+    assert not outcome.verification.goal_met
+    assert outcome.verification.checked
+    assert "65%" in outcome.verification.reason
+
+
+async def test_recovery_says_so_when_nobody_wrote_down_the_goal(
+    recovery, db, speakers
+) -> None:
+    """A row from before goals existed. Comparing the world against a guess would
+    be worse than admitting there is nothing to compare against."""
+    effects = EffectStore(db)
+    effects.reserve("eff-audio", capability_id=SET, task_id="t1", step_key="set",
+                    args={})
+    effects.sweep_unsettled()
+    speakers(reading(0.30))
+
+    outcome = await recovery.reconcile("eff-audio")
+
+    assert outcome.status is RecoveryStatus.STILL_UNKNOWN
+    assert not outcome.verification.goal_met
+
+
+async def test_a_crashed_mute_is_settled_by_the_flag_it_wanted(
+    recovery, db, speakers
+) -> None:
+    crashed(db, MUTE, {"muted": True})
+    speakers(reading(0.30, muted=True))
+
+    outcome = await recovery.reconcile("eff-audio")
+
+    assert outcome.status is RecoveryStatus.RESOLVED_GOAL_ONLY
+    assert outcome.verification.goal_met and outcome.verification.checked
+
+
 # ------------------------------------------------------- catalogue and reflex
 
 
@@ -379,6 +771,30 @@ def test_the_planner_can_see_it_on_windows() -> None:
     menu = TargetResolver(ToolRegistry(), elsewhere).menu()
 
     assert CAPABILITY in {c["id"] for c in menu["capabilities"]}
+
+
+async def test_a_capability_that_does_not_run_here_says_so_rather_than_blaming_the_caller(
+    capability_runner,
+) -> None:
+    """The wrong host is an unsupported platform, not a bad parameter — and a
+    caller deciding whether to retry reads that field.
+
+    The platform list is rewritten rather than relied on, so the test means the
+    same thing on Windows as it does here.
+    """
+    registry = CapabilityRegistry()
+    registry.add(replace(REGISTRY.get(SET), platforms=("plan9",)))
+    capability_runner.register_executor("capability", NativeCapabilityExecutor(registry))
+
+    result = await capability_runner.run(
+        CapabilityTarget(SET),
+        Action(tool=SET, params={"percent": 30}),
+        ExecutionContext(runtime_profile=RuntimeProfile.TEST),
+    )
+
+    assert result.failure is Failure.UNSUPPORTED_PLATFORM
+    assert result.disposition is EffectDisposition.NOT_STARTED
+    assert not result.retryable
 
 
 def test_the_catalogue_withholds_it_where_it_cannot_run() -> None:
@@ -472,15 +888,42 @@ def test_nothing_reaches_the_windows_adapter_except_the_capability() -> None:
     assert offenders == [], f"ktoś woła Windows z pominięciem koperty: {offenders}"
 
 
-def test_this_stage_contains_no_way_to_change_the_volume() -> None:
-    """E1 is read-only. Nothing here can set, mute or unmute anything."""
+def test_a_write_is_only_ever_judged_by_the_same_measurement_as_a_read() -> None:
+    """The rule that replaced "this stage cannot write".
+
+    E1 was read-only and a test held it there. E2 writes, so the guarantee moves
+    rather than disappearing: every setter is followed by `_observe`, the one
+    measurement the reader also uses, and no verifier is allowed to conclude
+    anything from the setter having returned.
+    """
     import inspect
 
-    source = inspect.getsource(audio)
+    source = inspect.getsource(audio._write_windows)
 
-    for forbidden in ("SetMasterVolumeLevelScalar", "SetMute", "SetMasterVolumeLevel",
-                      "audio.master.set", "audio.mute"):
-        assert forbidden not in source, f"E1 dorobiło zapis: {forbidden}"
+    assert "SetMasterVolumeLevelScalar" in source and "SetMute" in source
+    assert source.index("_observe") < source.index("SetMasterVolumeLevelScalar"), (
+        "stan sprzed zmiany musi być zmierzony, zanim cokolwiek się zmieni"
+    )
+    assert source.rindex("_observe") > source.rindex("SetMute"), (
+        "po zapisie musi nastąpić odczyt — inaczej nie ma czego weryfikować"
+    )
+
+
+@pytest.mark.parametrize(
+    "verifier, echo",
+    [
+        ("verify_master_set", {"requested_percent": 30}),
+        ("verify_master_mute", {"requested_muted": True}),
+    ],
+)
+async def test_a_result_that_only_echoes_the_request_is_refused(verifier, echo) -> None:
+    """The original defect in this capability's shape: a "success" whose entire
+    content is the thing that was asked for."""
+    verdict = await getattr(audio, verifier)(
+        Invocation(SET, {}), Outcome(ok=True, value=dict(echo), evidence=dict(echo))
+    )
+
+    assert not verdict.ok and verdict.checked
 
 
 def test_the_conversion_has_exactly_one_definition() -> None:

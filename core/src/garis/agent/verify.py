@@ -72,6 +72,13 @@ class StepEvidence:
     error: str = ""
     skipped: bool = False
     value: Any = None
+    #: The step's own verdict on itself, from the capability that ran it.
+    #: `True` it checked and holds, `False` it checked and does not, `None`
+    #: nobody checked. Three values because collapsing the last two is how
+    #: "nothing verified this" becomes "verified".
+    verified: bool | None = None
+    #: What that verdict said, in one sentence, for a report to quote.
+    note: str = ""
     extras: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -119,6 +126,14 @@ class Verifier:
         # earns "sprawdzone" without a model, and it earns it on arithmetic.
         if plan is not None and plan.origin == reflex.ORIGIN:
             return self._check_reflex(ran)
+
+        # Every step that ran carried its own verifier, and those verifiers
+        # looked at the machine. That is stronger evidence than a model's
+        # opinion of a summary, so it is asked first — and it is the only other
+        # path that earns "sprawdzone" without a model.
+        settled = self._check_step_verdicts(ran, goal)
+        if settled is not None:
+            return settled
 
         if not goal.criteria and not any(e.expects for e in evidence):
             # Nothing was declared to check, and nothing failed. Do not spend a
@@ -186,6 +201,41 @@ class Verifier:
             unmet=tuple(str(u) for u in (data.get("unmet") or [])),
             checked=True, checked_by="model",
         )
+
+    @staticmethod
+    def _check_step_verdicts(
+        ran: list[StepEvidence], goal: Goal
+    ) -> Verification | None:
+        """What the steps say about themselves, when they are entitled to.
+
+        A capability verifier reads the machine after the act — it knows the
+        volume came back 45% when 30% was asked for. Two rules keep that from
+        becoming more than it is:
+
+        * a measured miss settles the task as unmet **whatever else was asked**,
+          because a step that provably did not do its job did not do it;
+        * a clean sweep settles the task as met **only when the goal declared no
+          criteria of its own**. Steps vouch for themselves; they cannot vouch
+          for a condition nobody handed them.
+
+        `None` means these verdicts do not settle it, and the usual path runs.
+        """
+        missed = [e for e in ran if e.verified is False]
+        if missed:
+            first = missed[0]
+            return Verification(
+                goal_met=False, checked=True, checked_by="rules",
+                reason=first.note or f"Krok {first.name} nie osiągnął tego, co miał.",
+                unmet=tuple(f"{e.name}: {e.note}".strip(": ") for e in missed[:3]),
+            )
+        if goal.criteria:
+            return None
+        if ran and all(e.verified is True for e in ran):
+            return Verification(
+                goal_met=True, checked=True, checked_by="rules",
+                reason=ran[-1].note or "Każdy krok sprawdził swój wynik po fakcie.",
+            )
+        return None
 
     @staticmethod
     def _check_reflex(ran: list[StepEvidence]) -> Verification:

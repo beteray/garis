@@ -21,20 +21,25 @@ The rules these tests hold the engine to:
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from garis.agent import AgentLoop, AgentState, Goal, Planner, Verifier, reflex
 from garis.agent.goal import Plan, PlanStep
 from garis.agent.report import build_report
 from garis.agent.verify import StepEvidence, Verification
 from garis.config import Config, ModelsConfig
-from garis.kernel import ToolTarget
+from garis.kernel import CapabilityTarget, ToolTarget
 from garis.models import ModelRouter
 from garis.models.providers.fake import FakeProvider, plan_reply, role_aware
 from garis.runtime import Runtime
 from garis.tasks import TaskState
+
+NOT_MET = json.dumps({"ok": False, "note": "Maila nie widzę.", "unmet": ["mail wysłany"]})
 
 
 def build_loop(runtime: Runtime, bus, config: Config, *, providers: list[Any]) -> AgentLoop:
@@ -209,6 +214,116 @@ async def test_shell_success_does_not_prove_the_outcome(runtime, bus, config) ->
 
     assert not outcome.report.verified
     assert outcome.verification and outcome.verification.checked_by == "none"
+
+
+# ------------------------------------------------- what the steps say for themselves
+
+
+def step(name: str, *, verified: bool | None, note: str = "", value: Any = None):
+    return StepEvidence(
+        target=CapabilityTarget(name), purpose="", ok=True, summary="x",
+        value=value if value is not None else {"a": 1},
+        verified=verified, note=note,
+    )
+
+
+async def test_a_step_that_checked_itself_against_the_machine_settles_the_task() -> None:
+    """A capability verifier read the endpoint after the write. Sending that to a
+    model to have its summary judged would be replacing a measurement with an
+    opinion."""
+    verdict = await Verifier(ModelRouter([], ModelsConfig())).check(
+        Goal("ustaw głośność na 30"),
+        [step("windows.audio.master.set", verified=True,
+              note="Ustawiłem głośność i sprawdziłem: 30%.")],
+    )
+
+    assert verdict.verified and verdict.checked_by == "rules"
+    assert "30%" in verdict.reason
+
+
+async def test_a_step_that_measured_a_miss_makes_the_task_unmet() -> None:
+    """Asked for 30%, measured 45%. Nothing downstream may round that up."""
+    verdict = await Verifier(ModelRouter([], ModelsConfig())).check(
+        Goal("ustaw głośność na 30", criteria=("głośność 30%",)),
+        [step("windows.audio.master.set", verified=False,
+              note="Ustawiłem głośność, ale urządzenie pokazuje 45% zamiast 30%.")],
+    )
+
+    assert verdict.checked and not verdict.goal_met and not verdict.verified
+    assert verdict.checked_by == "rules"
+
+
+async def test_a_step_that_nobody_checked_never_settles_anything() -> None:
+    """`None` is not `True`. The task falls through to the ordinary path, which
+    with no provider configured refuses to claim a check happened."""
+    verdict = await Verifier(ModelRouter([], ModelsConfig())).check(
+        Goal("zrób coś", criteria=("cokolwiek",)),
+        [step("some.capability", verified=None)],
+    )
+
+    assert not verdict.checked and not verdict.verified
+
+
+async def test_steps_vouch_for_themselves_and_not_for_a_criterion_nobody_gave_them(
+    bus,
+) -> None:
+    """Every step checked out and the goal asked for something else as well. The
+    steps cannot answer that, so this does not shortcut to "sprawdzone"."""
+    provider = FakeProvider(role_aware("{}", verification=NOT_MET), stub=False)
+    verdict = await Verifier(ModelRouter([provider], ModelsConfig(), bus=bus)).check(
+        Goal("ustaw głośność na 30 i wyślij mi o tym maila",
+             criteria=("mail wysłany",)),
+        [step("windows.audio.master.set", verified=True, note="Ustawiłem: 30%.")],
+    )
+
+    assert verdict.checked_by == "model"
+    assert not verdict.goal_met
+
+
+# ------------------------------------------------- saying what was measured
+
+
+def test_a_finished_write_reports_the_measurement_and_not_the_request() -> None:
+    """The 0.1.2 defect in this stage's shape: the answer must be the level that
+    came back, with the level that was there before it."""
+    said = reflex.answer(
+        CapabilityTarget("windows.audio.master.set"),
+        {"endpoint_id": "{ep-1}", "volume_scalar": 0.31, "volume_percent": 31,
+         "muted": False, "requested_percent": 30, "previous_percent": 20},
+    )
+
+    assert said == "Głośność: 31% (było 20%)."
+    assert "30" not in said, "prośba nie jest wynikiem"
+
+
+def test_a_write_whose_numbers_do_not_add_up_says_nothing_at_all() -> None:
+    said = reflex.answer(
+        CapabilityTarget("windows.audio.master.set"),
+        {"endpoint_id": "{ep-1}", "volume_scalar": 0.31, "volume_percent": 90,
+         "muted": False, "requested_percent": 30},
+    )
+
+    assert said == ""
+
+
+@pytest.mark.parametrize(
+    "muted, expected",
+    [(True, "Dźwięk jest wyciszony."), (False, "Dźwięk nie jest już wyciszony.")],
+)
+def test_a_finished_mute_says_which_way_it_went(muted, expected) -> None:
+    said = reflex.answer(
+        CapabilityTarget("windows.audio.master.mute"),
+        {"endpoint_id": "{ep-1}", "volume_scalar": 0.30, "volume_percent": 30,
+         "muted": muted, "requested_muted": muted},
+    )
+
+    assert said == expected
+
+
+def test_a_target_nobody_taught_us_to_read_produces_no_sentence() -> None:
+    """Guessing a sentence out of an arbitrary tool's output is the invention
+    this whole table exists to avoid."""
+    assert reflex.answer(CapabilityTarget("windows.something.else"), {"x": 1}) == ""
 
 
 # ------------------------------------------------------------------- wording

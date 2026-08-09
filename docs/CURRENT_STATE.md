@@ -30,7 +30,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 
 | Obszar | Stan | Dowód |
 |---|---|---|
-| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 633 testów |
+| Runtime: `resolve → polityka → zgoda → dzierżawa → efekt → wykonanie → dowody → weryfikacja → zapis → zdarzenie` | ✅ | 675 testów |
 | **Jedna koperta wykonania** — narzędzie i zdolność wchodzą w to samo `CapabilityRunner.run` | ✅ | `test_runner.py` — test strukturalny czyta źródło `Runtime.perform` |
 | Jedna decyzja polityki, jeden wpis audytu, jeden efekt na wywołanie | ✅ | `test_runner.py` — liczniki na prawdziwym `PolicyEngine` |
 | Odmowa polityki i odmowa użytkownika nie zostawiają śladu w świecie | ✅ | `test_effect_safety.py` |
@@ -61,8 +61,14 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 | CORS dla okna Tauri | ✅ | `test_api.py` — bez tego okno nie łączy się wcale |
 | **Narzędzia Windows** (rejestr, firewall, usługi, ekran, mysz, winget) | ❔ | deklarują platformę; nigdy nie wykonane na Windows |
 | **Odczyt głośności** `windows.audio.master.get` (Core Audio przez pycaw) | 🔨 | napisane i pokryte testami; **Core Audio nigdy nie wywołane** — to środowisko to Linux. Dowód: `docs/WINDOWS_CHECKPOINT.md` §E1 |
+| **Zmiana głośności i wyciszenia** `windows.audio.master.set` / `.mute` | 🔨 | napisane i pokryte testami; **żaden suwak nigdy się nie ruszył** — Dowód: `docs/WINDOWS_CHECKPOINT.md` §E2 |
+| Zmiana uznana za wykonaną dopiero po odczycie wstecznym (tolerancja 1 pkt) | ✅ | `test_audio.py` — atrapa urządzenia potrafi się nie zgodzić z prośbą |
+| Zapis, który nie dotarł, nie doszedł i mógł dojść — trzy różne dyspozycje | ✅ | `test_audio.py` — `NOT_APPLIED` / `UNKNOWN` / `APPLIED` |
+| Cel operacji zapisany przy rezerwacji, więc awaria go nie zabiera | ✅ | `test_effects.py`, `test_runner.py` |
+| Recovery po zapisie audio: mierzy stan, nie przypisuje sobie sprawstwa | ✅ | `test_audio.py` — `resolved_goal_only`, dyspozycja `unknown` |
+| Krok, który sam sprawdził swój wynik, rozstrzyga zadanie bez modelu | ✅ | `test_truthfulness.py` |
 | Konwersja skalar→procent, weryfikator, odruch „jaka jest głośność" | ✅ | `test_audio.py` — arytmetyka i koperta, bez Windows |
-| Audio (mikrofon, głośniki, STT, TTS) | ❌ | nie istnieje — M13; recovery czeka na `audio.set` jako pierwszy prawdziwy przypadek |
+| Audio (mikrofon, STT, TTS) | ❌ | nie istnieje — M13. Głośniki są zrobione (odczyt, zapis, wyciszenie); mikrofon i mowa nie |
 | Klient MCP | ❌ | nie istnieje — ani jednej linii |
 | Pluginy / rozszerzenia zewnętrzne | ❌ | nie istnieje; `paths.py:90` tworzy pusty katalog bez czytelnika |
 | Scheduler / zadania cykliczne | ❌ | nie istnieje — świadomie, patrz `nav.ts:11` |
@@ -74,7 +80,7 @@ co naprawdę zależy od Windows: Mica, tray, skrót, autostart, `.msi`.
 Ostatnie osiem wierszy jest tu po to, żeby brak był **widoczny w tej samej
 tabeli**, co reszta. Podsystem nieopisany nigdzie wygląda jak podsystem gotowy.
 
-Weryfikacja: `pytest` 633 zielonych (1 pominięty) · `ruff` czysto ·
+Weryfikacja: `pytest` 675 zielonych (1 pominięty) · `ruff` czysto ·
 `mypy` czysto (84 plików).
 
 **Przeładowanie i zdrowie dostawców sprawdzone też na żywo**, nie tylko testami:
@@ -144,7 +150,7 @@ wymagają maszyny z Windows 11.
 |---|---|---|
 | 1 | `git status`, commit | ✅ |
 | 2 | zależności | ✅ |
-| 3 | testy Python | ✅ 633 |
+| 3 | testy Python | ✅ 675 |
 | 4 | `ruff`, `mypy` | ✅ |
 | 5 | build frontendu | ✅ |
 | 6 | `cargo fmt --check` | ✅ |

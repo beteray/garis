@@ -238,6 +238,62 @@ Ostatni punkt jest warunkiem, nie uprzejmością: E1 jest tylko do odczytu.
 
 ---
 
+## E2 — pierwsza prawdziwa zmiana w Windows (`windows.audio.master.set` / `.mute`)
+
+**Ten etap rusza suwakiem.** Wszystko poniżej zmienia ustawienia dźwięku i
+przywraca je z powrotem. Nie odpalaj tego w trakcie rozmowy ani nagrania.
+
+Sedno E2 nie brzmi „czy da się ustawić głośność”, tylko **czy GARIS uzna zmianę
+za wykonaną dopiero po jej zmierzeniu**. `SetMasterVolumeLevelScalar` zwracające
+`S_OK` mówi, że wywołanie przeszło, a nie że komputer jest na 30%.
+
+```powershell
+.venv\Scripts\python -m pytest -q
+
+# Surowe liczby: prośba, pomiar po zmianie, stan sprzed zmiany.
+.venv\Scripts\python.exe tools\e2_audio_check.py
+.venv\Scripts\python.exe tools\e2_audio_check.py --percent 55
+```
+
+Skrypt ustawia poziom, przywraca poprzedni i wypisuje `requested`, `measured`,
+`previous`, `verified`, `disposition` dla obu kroków.
+
+- [ ] `requested` i `measured` różnią się najwyżej o 1 punkt (tolerancja
+      kwantyzacji sterownika)
+- [ ] `measured` zgadza się z suwakiem głośności w systemie
+- [ ] `previous` to poziom, który był tam **przed** zmianą, a nie prośba
+- [ ] `verified: true` i `disposition: applied` dla obu kroków
+- [ ] Po `--keep` głośność zostaje zmieniona; bez `--keep` wraca na swoje
+- [ ] `garis do "ustaw głośność na 30 procent"` kończy się zdaniem z **pomiarem**
+      (np. `Głośność: 30% (było 55%).`) i `verified: true`
+- [ ] `garis do "wycisz dźwięk"` wycisza; ikona głośnika w pasku pokazuje
+      wyciszenie
+- [ ] `garis do "odcisz"` zdejmuje wyciszenie, a **poziom głośności zostaje
+      nietknięty** (wyciszenie to nie zero)
+- [ ] `garis effects list` pokazuje efekt z `disposition: applied` i zapisanym
+      celem
+
+### Czego E2 dowodzi mimo awarii
+
+Odłącz wszystkie urządzenia odtwarzania i powtórz `tools\e2_audio_check.py`:
+
+- [ ] komunikat o braku urządzenia, **nie** `0%` i **nie** „ustawione”
+- [ ] `disposition: not_applied` — czyli GARIS wie, że nic nie ruszył
+
+### Recovery — najtrudniejszy punkt tego etapu
+
+Zleć zmianę głośności i ubij proces silnika **w trakcie** (`Stop-Process -Name
+garis -Force`). Po ponownym uruchomieniu:
+
+- [ ] GARIS **odczytuje** głośność zamiast ustawiać ją drugi raz
+- [ ] status recovery to `resolved_goal_only`, a `disposition` zostaje `unknown`
+- [ ] w raporcie widnieje, że cel jest zmierzony, ale nie wiadomo, kto go osiągnął
+
+Ostatni punkt jest istotą, nie formalnością: głośność 30% dowodzi, że jest 30%,
+a nie że to GARIS ją ustawił — suwak mógł ruszyć człowiek.
+
+---
+
 ## Po zaliczeniu
 
 Zaktualizuj `docs/CURRENT_STATE.md`: przenieś, co zweryfikowane, z 🔨 na ✅ —

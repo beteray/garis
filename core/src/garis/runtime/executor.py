@@ -162,6 +162,10 @@ class Runtime:
             return ActionResult.success(
                 action, result.value, duration_ms=result.duration_ms,
                 verified=result.verified if result.verification.checked else None,
+                # The verifier's own sentence travels with its verdict. Without
+                # it a caller knows a step missed its postcondition and cannot
+                # say what it measured instead.
+                detail=result.verification.reason,
             )
         return ActionResult.failure(
             action, result.error, kind=result.error_kind or "error",

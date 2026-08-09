@@ -223,6 +223,13 @@ class AgentLoop:
                         # verifier checks numbers, and a flattened string cannot
                         # be checked at all.
                         value=result.value,
+                        # A capability that checked its own postcondition against
+                        # the machine already answered the question the task-level
+                        # verifier is about to ask. Dropping that answer here is
+                        # how a measured result reaches the report as "nie
+                        # sprawdzałem".
+                        verified=result.verified,
+                        note=result.detail,
                         extras={"duration_ms": result.duration_ms},
                     )
                 )

@@ -394,6 +394,24 @@ def _present_volume(value: Any) -> str:
         return f"Głośność jest ustawiona na {percent}%, ale dźwięk jest wyciszony."
     return f"Głośność: {percent}%."
 
+
+def _present_volume_change(value: Any) -> str:
+    """The level that came back, and the one that was there before it.
+
+    Both measured. Saying "ustawiłem na 30%" from the request would be reporting
+    the question as the answer — which is what the whole reflex table exists to
+    stop.
+    """
+    percent = value["volume_percent"]
+    before = value.get("previous_percent")
+    if isinstance(before, int) and not isinstance(before, bool) and before != percent:
+        return f"Głośność: {percent}% (było {before}%)."
+    return f"Głośność: {percent}%."
+
+
+def _present_mute_change(value: Any) -> str:
+    return "Dźwięk jest wyciszony." if value["muted"] else "Dźwięk nie jest już wyciszony."
+
 REFLEXES: tuple[Reflex, ...] = (
     Reflex(
         name="disk-space",
@@ -459,6 +477,32 @@ REFLEXES: tuple[Reflex, ...] = (
 )
 
 BY_TARGET: dict[StepTarget, Reflex] = {r.target: r for r in REFLEXES}
+
+
+@dataclass(frozen=True, slots=True)
+class Presenter:
+    """How to say one target's result — separate from which question it answers.
+
+    Every reflex is also a presenter, but not every presenter is a reflex.
+    "Ustaw głośność na 30" needs a plan, an effect and a gate, so it never
+    becomes a reflex; the sentence at the end of it is still built from measured
+    values by exactly the same rules, and that part belongs here rather than in
+    a second implementation somewhere downstream.
+    """
+
+    validate: Callable[[Any], str]
+    present: Callable[[Any], str]
+
+
+PRESENTERS: dict[StepTarget, Presenter] = {
+    **{r.target: Presenter(r.validate, r.present) for r in REFLEXES},
+    CapabilityTarget("windows.audio.master.set"): Presenter(
+        _validate_volume, _present_volume_change
+    ),
+    CapabilityTarget("windows.audio.master.mute"): Presenter(
+        _validate_volume, _present_mute_change
+    ),
+}
 
 
 def _words(text: str) -> set[str]:
@@ -529,11 +573,26 @@ def check(target: StepTarget, value: Any) -> str:
 
 
 def answer(target: StepTarget, value: Any) -> str:
-    """The sentence to show, built from the measured values. Empty if unusable."""
-    reflex = BY_TARGET.get(target)
-    if reflex is None or reflex.validate(value):
+    """The sentence to show, built from the measured values. Empty if unusable.
+
+    Reads `PRESENTERS`, not `BY_TARGET`: a result GARIS knows how to say is not
+    the same set as a question it can answer without a model.
+    """
+    presenter = PRESENTERS.get(target)
+    if presenter is None or presenter.validate(value):
         return ""
-    return reflex.present(value)
+    return presenter.present(value)
 
 
-__all__ = ["BY_TARGET", "ORIGIN", "REFLEXES", "Reflex", "answer", "check", "find", "plan_for"]
+__all__ = [
+    "BY_TARGET",
+    "ORIGIN",
+    "PRESENTERS",
+    "REFLEXES",
+    "Presenter",
+    "Reflex",
+    "answer",
+    "check",
+    "find",
+    "plan_for",
+]

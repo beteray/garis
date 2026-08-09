@@ -63,7 +63,7 @@ core/src/garis/
     policy.py approvals.py audit.py leases.py    bramki, dokładnie raz każda
   capabilities/                                  zdolności z weryfikatorem i dowodami
     native.py                                    wykonawca zdolności — tylko executor
-    audio.py                                     odczyt głośności — pierwszy prawdziwy Windows
+    audio.py                                     głośniki: odczyt, zapis, wyciszenie + recovery
   profiles.py                                    PRODUCTION / DEVELOPMENT / TEST / FIXTURE
   models/ + models/providers/                    router + 5 dostawców
     health.py                                    7 statusów dostawcy, mierzonych
@@ -104,10 +104,13 @@ udawać sukces.
   `x86_64-pc-windows-msvc`, a pełna ścieżka instalator → start → runtime została
   przejechana na paczce `.deb`. Windows-owe zostaje to, co naprawdę zależy od
   Windows: Mica, tray, `Ctrl+Alt+G`, autostart, `.msi`.
-- **audio nie istnieje.** Warstwa decyzyjna głosu jest kompletna i przetestowana
-  (stany, słowo aktywacyjne, kalibracja, wybór drogi), ale STT i TTS to atrapy
-  testowe w `voice/engines.py` — nie ma wejścia audio, nie ma faster-whisper, nie
-  ma Pipera. To M13 i jest zablokowane do czasu, aż reszta produktu działa.
+- **mowa nie istnieje.** Głośniki są zrobione — `windows.audio.master.get`,
+  `.set` i `.mute` czytają i zmieniają Core Audio, z odczytem wstecznym i
+  recovery. Czego nie ma: wejścia z mikrofonu, STT i TTS. Warstwa decyzyjna głosu
+  jest kompletna i przetestowana (stany, słowo aktywacyjne, kalibracja, wybór
+  drogi), ale silniki w `voice/engines.py` to atrapy testowe — nie ma
+  faster-whisper, nie ma Pipera. To M13 i jest zablokowane do czasu, aż reszta
+  produktu działa.
 - mobile (etap 7)
 - ścieżki natywne Windows **nie były uruchomione na Windows** — powstały na
   Linuksie, z deklaracją platformy i `Unsupported` poza Windows. To pierwsza
